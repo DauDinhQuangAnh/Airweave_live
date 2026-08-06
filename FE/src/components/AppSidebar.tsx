@@ -1,7 +1,8 @@
 import {
   LayoutDashboard, Map, Route, Siren, User, LogOut, Crown,
-  ShieldAlert, Users, Heart, IdCard, History, Car, Building2, Database,
+  ShieldAlert, Users, Heart, IdCard, History, Car, Building2, Database, Cpu,
 } from 'lucide-react';
+
 import { NavLink } from '@/components/NavLink';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/use-auth';
@@ -37,10 +38,13 @@ const PERSONAL: Item[] = [
 ];
 
 const INTEGRATIONS: Item[] = [
+  { url: '/admin', vi: '⚡ IoT Admin Portal', en: '⚡ IoT Admin Portal', icon: Cpu },
+  { url: '/org-dashboard', vi: 'Bảng điều khiển Tổ chức', en: 'Org Dashboard', icon: Building2 },
   { url: '/mobility-handoff', vi: 'Di chuyển & đặt xe', en: 'Mobility Handoff', icon: Car },
   { url: '/gov-camera-api', vi: 'Gov API / Camera AI', en: 'Gov API / Camera AI', icon: Building2 },
   { url: '/partner-data', vi: 'Dữ liệu đối tác', en: 'Partner Data', icon: Database },
 ];
+
 
 interface AppSidebarProps { lang: 'vi' | 'en' }
 

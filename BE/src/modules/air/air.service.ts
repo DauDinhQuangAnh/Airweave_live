@@ -1,7 +1,11 @@
-import { Injectable, ServiceUnavailableException, Logger } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { TtlCache, fetchJson, distanceKm, pm25ToAqi } from '../../common/cache.util';
+import { RedisTtlCache, fetchJson, distanceKm } from '../../common/cache.util';
+import { calculateAqiFromPm25, applyHumidityCorrection, calculateNowCast } from '../../common/air-analytics.util';
+import { REDIS_CLIENT } from '../../common/redis.module';
 import { GeoPointDto, BoundsDto, HistoryQueryDto } from './dto/air.dto';
+import type Redis from 'ioredis';
+
 
 /** WAQI trả về trạm *gần nhất*, có thể cách hàng trăm km — quá xa thì coi như không có. */
 const MAX_STATION_DISTANCE_KM = 40;
@@ -10,12 +14,24 @@ const MAX_STATION_DISTANCE_KM = 40;
 export class AirService {
   private readonly logger = new Logger(AirService.name);
 
-  private readonly waqiCache = new TtlCache<any>(5 * 60_000);
-  private readonly boundsCache = new TtlCache<any>(3 * 60_000);
-  private readonly weatherCache = new TtlCache<any>(5 * 60_000);
-  private readonly historyCache = new TtlCache<any>(30 * 60_000);
+  // Redis-backed caches với fallback về in-memory (graceful degradation)
+  private readonly waqiCache: RedisTtlCache<any>;
+  private readonly boundsCache: RedisTtlCache<any>;
+  private readonly weatherCache: RedisTtlCache<any>;
+  private readonly historyCache: RedisTtlCache<any>;
+  private readonly rankingCache: RedisTtlCache<any>;
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis | null,
+  ) {
+    // TTL theo giây — khớp với TTL cũ (phút → giây)
+    this.waqiCache    = new RedisTtlCache(redis, 5 * 60,   'waqi:point');
+    this.boundsCache  = new RedisTtlCache(redis, 3 * 60,   'waqi:bounds');
+    this.weatherCache = new RedisTtlCache(redis, 5 * 60,   'weather:current');
+    this.historyCache = new RedisTtlCache(redis, 30 * 60,  'weather:history');
+    this.rankingCache = new RedisTtlCache(redis, 10 * 60,  'air:ranking');
+  }
 
   private get waqiToken() {
     const token = this.config.get<string>('WAQI_API_TOKEN');
@@ -105,7 +121,10 @@ export class AirService {
 
   /**
    * Thời tiết + chất lượng không khí hiện tại.
-   * Ưu tiên số liệu trạm WAQI, thiếu thì lấy Open-Meteo (không cần API key).
+   * Thứ tự ưu tiên dữ liệu:
+   * 1. IoT Node vật lý (nếu có ở gần < 2km)
+   * 2. Trạm quan trắc WAQI
+   * 3. Open-Meteo (dự báo/fallback)
    */
   async currentConditions(dto: GeoPointDto) {
     const key = `${dto.lat.toFixed(3)},${dto.lng.toFixed(3)}`;
@@ -126,23 +145,24 @@ export class AirService {
 
       const cw = weather?.current ?? {};
       const ca = air?.current ?? {};
-      const usable = waqi?.available === true;
-
-      const pm25 = usable ? (waqi.pm25 ?? ca.pm2_5 ?? 0) : (ca.pm2_5 ?? 0);
+      const humidity = Math.round(cw.relative_humidity_2m ?? 0);
+      const rawPm25 = usable ? (waqi.pm25 ?? ca.pm2_5 ?? 0) : (ca.pm2_5 ?? 0);
+      const pm25 = applyHumidityCorrection(rawPm25, humidity);
       const pm10 = usable ? (waqi.pm10 ?? ca.pm10 ?? 0) : (ca.pm10 ?? 0);
 
       return {
-        aqi: usable ? waqi.aqi : pm25ToAqi(pm25),
+        aqi: usable ? waqi.aqi : calculateAqiFromPm25(pm25),
         pm25: Math.round(pm25 * 10) / 10,
         pm10: Math.round(pm10 * 10) / 10,
         temperature: Math.round(cw.temperature_2m ?? 0),
-        humidity: Math.round(cw.relative_humidity_2m ?? 0),
+        humidity,
         windSpeed: Math.round(cw.wind_speed_10m ?? 0),
         windDirectionDeg: Math.round(cw.wind_direction_10m ?? 0),
         source: usable ? 'waqi' : 'open-meteo',
         station: usable ? waqi.station : null,
         dominantPollutant: usable ? waqi.dominantPollutant : null,
         updatedAt: usable ? (waqi.time ?? new Date().toISOString()) : new Date().toISOString(),
+
         hourly: {
           time: air?.hourly?.time ?? [],
           pm2_5: air?.hourly?.pm2_5 ?? [],
@@ -185,7 +205,7 @@ export class AirService {
         const v = pm25[i];
         if (typeof v !== 'number') return;
         if (!byDay.has(day)) byDay.set(day, []);
-        byDay.get(day).push(v);
+        byDay.get(day)!.push(v);
       });
 
       const daily = [...byDay.entries()].map(([date, values]) => {
@@ -209,9 +229,7 @@ export class AirService {
     });
   }
 
-  /** Bảng xếp hạng AQI các thành phố lớn (dựng từ WAQI, cache 10 phút). */
-  private readonly rankingCache = new TtlCache<any>(10 * 60_000);
-
+  /** Bảng xếp hạng AQI các thành phố lớn (cache 10 phút trong Redis). */
   private static readonly RANKING_CITIES = [
     { name: 'Hà Nội', lat: 21.0285, lng: 105.8542, country: 'VN' },
     { name: 'TP. Hồ Chí Minh', lat: 10.8231, lng: 106.6297, country: 'VN' },
@@ -234,7 +252,7 @@ export class AirService {
         }),
       );
 
-      const cities = results.filter(Boolean).sort((a, b) => b.aqi - a.aqi);
+      const cities = results.filter(Boolean).sort((a, b) => b!.aqi - a!.aqi);
       return {
         updatedAt: new Date().toISOString(),
         cities: cities.map((c, i) => ({ rank: i + 1, ...c })),

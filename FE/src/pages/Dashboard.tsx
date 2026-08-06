@@ -12,14 +12,19 @@ import AuroraBackground from '@/components/AuroraBackground';
 import AQITicker, { buildCurrentAirTickerItems } from '@/components/landing/AQITicker';
 import PersonalizedAQIGuidance from '@/components/PersonalizedAQIGuidance';
 import PrivacyStatusBadges from '@/components/PrivacyStatusBadges';
+import NodeProximityBadge from '@/components/NodeProximityBadge';
+import NearbyNodesMapWidget from '@/components/dashboard/NearbyNodesMapWidget';
 import { trackBehavior } from '@/lib/behavior-analytics';
+
+
 
 const DashboardMap = lazy(() => import('@/components/dashboard/DashboardMap'));
 import MapLitePreview from '@/components/dashboard/MapLitePreview';
 
 const Dashboard = () => {
   const { lang } = useOutletContext<{ lang: 'vi' | 'en' }>();
-  const { location, weather, refreshData } = useLiveAirContext();
+  const { location, weather, refreshData, proximityNode, proximityDistance } = useLiveAirContext();
+
   const navigate = useNavigate();
   const { stations, loading: stationsLoading, refresh: refreshStations } = useWaqiStations();
   const [activeStation, setActiveStation] = useState<string | null>(null);
@@ -145,8 +150,16 @@ const Dashboard = () => {
       {/* Scrollable card stack */}
       <div className="relative z-10 flex-1 min-h-0 overflow-y-auto">
         <div className="max-w-5xl mx-auto px-3 md:px-5 py-4 md:py-5 space-y-4">
+          {/* Node Proximity Connection Badge */}
+          <NodeProximityBadge matchedNode={proximityNode} distanceMeters={proximityDistance} />
+
           {/* PAM Air summary */}
           <PAMAirSummary userLocation={location.label} weather={weather} />
+
+          {/* Nearby IoT Nodes Map Widget */}
+          <NearbyNodesMapWidget />
+
+
 
           {/* Privacy status strip — Health Profile / Consent / GPS / Medical ID Demo */}
           <PrivacyStatusBadges lang={lang} compact />

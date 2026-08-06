@@ -23,6 +23,8 @@ type SyncedLiveContext = {
   snapshot_updated_at: string;
 };
 
+import { useNodeProximity } from '@/hooks/use-node-proximity';
+
 interface LiveAirContextValue {
   location: GeoLocation;
   weather: WeatherData;
@@ -33,7 +35,11 @@ interface LiveAirContextValue {
   disableLiveTracking: () => void;
   setManualLocation: (lat: number, lng: number, label: string) => void;
   isUsingSyncedFallback: boolean;
+  proximityNode: any | null;
+  proximityDistance: number | null;
+  isConnectedToNode: boolean;
 }
+
 
 const LiveAirContext = createContext<LiveAirContextValue | null>(null);
 
@@ -112,10 +118,34 @@ export function LiveAirProvider({ lang, children }: { lang: 'vi' | 'en'; childre
     ? buildFallbackLocation(rawLocation, syncedContext)
     : rawLocation;
 
+  const { matchedNode, distanceMeters, isConnectedToNode } = useNodeProximity(
+    effectiveLocation.lat,
+    effectiveLocation.lng,
+  );
+
   const { weather: liveWeather, hourlyForecast, refresh } = useWeatherData(effectiveLocation, lang);
-  const weather = isUsingSyncedFallback && syncedContext && liveWeather.loading
+  const baseWeather = isUsingSyncedFallback && syncedContext && liveWeather.loading
     ? buildFallbackWeather(liveWeather, syncedContext)
     : liveWeather;
+
+  // Proximity Node Telemetry Override: Khi ở gần Node (< 500m), đè dữ liệu đo trực tiếp từ Node
+  const weather = useMemo(() => {
+    if (isConnectedToNode && matchedNode) {
+      return {
+        ...baseWeather,
+        aqi: matchedNode.aqi,
+        pm25: matchedNode.pm25,
+        pm10: matchedNode.pm10,
+        temperature: matchedNode.temperature,
+        humidity: matchedNode.humidity,
+        source: 'iot-node',
+        station: `${matchedNode.name} (${matchedNode.organization_name || 'Vi vùng'})`,
+        loading: false,
+        error: null,
+      };
+    }
+    return baseWeather;
+  }, [baseWeather, isConnectedToNode, matchedNode]);
 
   useEffect(() => {
     if (!user) return;
@@ -128,19 +158,19 @@ export function LiveAirProvider({ lang, children }: { lang: 'vi' | 'en'; childre
         lat: rawLocation.lat,
         lng: rawLocation.lng,
         accuracy: rawLocation.accuracy,
-        aqi: liveWeather.aqi,
-        pm25: liveWeather.pm25,
-        pm10: liveWeather.pm10,
-        temperature: liveWeather.temperature,
-        humidity: liveWeather.humidity,
-        wind_speed: liveWeather.windSpeed,
-        wind_direction: liveWeather.windDirection,
-        source: liveWeather.source,
-        station: liveWeather.station,
-        snapshot_updated_at: liveWeather.updatedAt || new Date().toISOString(),
+        aqi: weather.aqi,
+        pm25: weather.pm25,
+        pm10: weather.pm10,
+        temperature: weather.temperature,
+        humidity: weather.humidity,
+        wind_speed: weather.windSpeed,
+        wind_direction: weather.windDirection,
+        source: weather.source,
+        station: weather.station,
+        snapshot_updated_at: weather.updatedAt || new Date().toISOString(),
       })
       .catch(() => {});
-  }, [user, rawLocation, liveWeather]);
+  }, [user, rawLocation, liveWeather, weather]);
 
   const refreshData = useCallback(async () => {
     await requestLocation();
@@ -160,7 +190,11 @@ export function LiveAirProvider({ lang, children }: { lang: 'vi' | 'en'; childre
     disableLiveTracking,
     setManualLocation,
     isUsingSyncedFallback,
-  }), [effectiveLocation, weather, hourlyForecast, refreshData, requestLocation, enableLiveTracking, disableLiveTracking, setManualLocation, isUsingSyncedFallback]);
+    proximityNode: matchedNode,
+    proximityDistance: distanceMeters,
+    isConnectedToNode,
+  }), [effectiveLocation, weather, hourlyForecast, refreshData, requestLocation, enableLiveTracking, disableLiveTracking, setManualLocation, isUsingSyncedFallback, matchedNode, distanceMeters, isConnectedToNode]);
+
 
   return <LiveAirContext.Provider value={value}>{children}</LiveAirContext.Provider>;
 }

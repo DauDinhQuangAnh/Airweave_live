@@ -12,11 +12,35 @@ services:
       - "5433:5432"
     volumes:
       - airweave_pgdata:/var/lib/postgresql/data
+    networks:
+      - airweave-net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U airweave -d airweave"]
       interval: 5s
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    container_name: airweave-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - airweave_redisdata:/data
+    networks:
+      - airweave-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+networks:
+  airweave-net:
+    driver: bridge
+
 volumes:
   airweave_pgdata:
+  airweave_redisdata:

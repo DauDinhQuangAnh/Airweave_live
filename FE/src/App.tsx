@@ -34,7 +34,27 @@ const HealthProfile = lazy(() => import("./pages/HealthProfile.tsx"));
 const MedicalID = lazy(() => import("./pages/MedicalID.tsx"));
 const Premium = lazy(() => import("./pages/Premium.tsx"));
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      /**
+       * Dữ liệu cũ được coi là "fresh" trong 2 phút — không re-fetch khi chuyển tab,
+       * mount component lần 2, hoặc window focus. Giảm ~60-70% HTTP request thừa.
+       * Các query cần realtime hơn sẽ override staleTime = 0 tại chỗ dùng.
+       */
+      staleTime: 2 * 60 * 1000,      // 2 phút
+      gcTime: 10 * 60 * 1000,        // giữ cache 10 phút sau khi không có subscriber
+      retry: 2,                       // retry 2 lần khi lỗi network
+      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10000), // exponential backoff
+      refetchOnWindowFocus: false,    // không fetch lại khi focus window
+      refetchOnReconnect: true,       // fetch lại khi reconnect mạng
+    },
+    mutations: {
+      retry: 1,
+    },
+  },
+});
+
 
 const PageFallback = () => (
   <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-background text-foreground">
@@ -45,6 +65,12 @@ const PageFallback = () => (
     </div>
   </div>
 );
+
+const AdminLayout = lazy(() => import("./components/admin/AdminLayout.tsx"));
+const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard.tsx"));
+const AdminNodesManager = lazy(() => import("./pages/admin/AdminNodesManager.tsx"));
+const AdminOrgsManager = lazy(() => import("./pages/admin/AdminOrgsManager.tsx"));
+const OrgDashboard = lazy(() => import("./pages/OrgDashboard.tsx"));
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -62,6 +88,15 @@ const App = () => (
               <Route path="/onboarding" element={<Onboarding />} />
               <Route path="/qr/:token" element={<MedicalQR />} />
               <Route path="/medical-id-demo" element={<MedicalIDDemo />} />
+              <Route path="/org-dashboard" element={<OrgDashboard />} />
+
+              {/* IoT Admin Portal */}
+              <Route path="/admin" element={<AdminLayout />}>
+                <Route index element={<AdminDashboard />} />
+                <Route path="nodes" element={<AdminNodesManager />} />
+                <Route path="orgs" element={<AdminOrgsManager />} />
+              </Route>
+
               {/* Protected app routes with sidebar */}
               <Route element={<AppLayout />}>
                 <Route path="/dashboard" element={<Dashboard />} />
@@ -92,5 +127,6 @@ const App = () => (
     </ThemeProvider>
   </QueryClientProvider>
 );
+
 
 export default App;

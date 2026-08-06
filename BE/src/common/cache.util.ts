@@ -1,3 +1,5 @@
+import type Redis from 'ioredis';
+
 /** Cache TTL trong bộ nhớ — giảm số lần gọi API ngoài (WAQI/Open-Meteo có giới hạn rate). */
 export class TtlCache<T> {
   private readonly store = new Map<string, { value: T; expiresAt: number }>();
@@ -31,6 +33,60 @@ export class TtlCache<T> {
     return value;
   }
 }
+
+/**
+ * RedisTtlCache — Wrapper dùng Redis làm backend cache.
+ * Tự động fallback về TtlCache in-memory khi Redis = null (graceful degradation).
+ * API giống hệt TtlCache để dễ swap.
+ */
+export class RedisTtlCache<T> {
+  private readonly fallback: TtlCache<T>;
+
+  constructor(
+    private readonly redis: Redis | null,
+    private readonly ttlSeconds: number,
+    private readonly namespace: string,
+    fallbackMaxEntries = 500,
+  ) {
+    this.fallback = new TtlCache<T>(ttlSeconds * 1000, fallbackMaxEntries);
+  }
+
+  private key(k: string) {
+    return `airweave:${this.namespace}:${k}`;
+  }
+
+  async get(key: string): Promise<T | undefined> {
+    if (!this.redis) return this.fallback.get(key);
+    try {
+      const raw = await this.redis.get(this.key(key));
+      if (!raw) return undefined;
+      return JSON.parse(raw) as T;
+    } catch {
+      return this.fallback.get(key);
+    }
+  }
+
+  async set(key: string, value: T): Promise<void> {
+    if (!this.redis) {
+      this.fallback.set(key, value);
+      return;
+    }
+    try {
+      await this.redis.set(this.key(key), JSON.stringify(value), 'EX', this.ttlSeconds);
+    } catch {
+      this.fallback.set(key, value);
+    }
+  }
+
+  async wrap(key: string, factory: () => Promise<T>): Promise<T> {
+    const cached = await this.get(key);
+    if (cached !== undefined) return cached;
+    const value = await factory();
+    await this.set(key, value);
+    return value;
+  }
+}
+
 
 /** fetch có timeout — tránh treo request khi API ngoài không phản hồi. */
 export async function fetchJson<T = any>(url: string, timeoutMs = 8000, init?: RequestInit): Promise<T> {

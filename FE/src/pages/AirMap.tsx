@@ -15,9 +15,20 @@ import { getAqiCircleColor } from '@/components/map/map-data';
 import MicroAirLayer from '@/components/map/MicroAirLayer';
 import CivicHotspotLayer from '@/components/map/CivicHotspotLayer';
 import { hotspotIntelligenceService } from '@/lib/civic-hotspot';
-import { airApi, communityApi } from '@/integrations/api';
+import { airApi, communityApi, nodesApi } from '@/integrations/api';
+
 import { useCommunityRealtime } from '@/hooks/use-community-realtime';
 import DataStatusChip from '@/components/feature-experience/DataStatusChip';
+import NodeProximityBadge from '@/components/NodeProximityBadge';
+
+import {
+  buildWaqiCluster,
+  getWaqiClusters,
+  buildReportCluster,
+  getReportClusters,
+  renderWaqiMarkerHtml,
+  getReportClusterPopupHtml,
+} from '@/lib/map-cluster';
 
 declare global {
   interface Window {
@@ -59,7 +70,8 @@ function timeAgo(iso: string, lang: 'vi' | 'en') {
 
 const AirMap = () => {
   const { lang } = useOutletContext<{ lang: 'vi' | 'en' }>();
-  const { location } = useLiveAirContext();
+  const { location, proximityNode, proximityDistance } = useLiveAirContext();
+
   const [searchParams, setSearchParams] = useSearchParams();
   const autoOpenReport = searchParams.get('report') === '1';
   useEffect(() => {
@@ -77,6 +89,9 @@ const AirMap = () => {
   const [searchPin, setSearchPin] = useState<{ lat: number; lng: number; label: string } | null>(null);
   const [reports, setReports] = useState<CommunityReport[]>([]);
   const [stations, setStations] = useState<WaqiStation[]>([]);
+  const [iotNodes, setIotNodes] = useState<any[]>([]);
+  const [mapZoom, setMapZoom] = useState(12);
+
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const overlayMarkersRef = useRef<any[]>([]);
@@ -87,12 +102,18 @@ const AirMap = () => {
     { windyKey, lat: location.lat, lng: location.lng, lang }
   );
 
-  // ---- Realtime community reports ----
+  // ---- Realtime community reports & IoT Nodes ----
   useEffect(() => {
     let active = true;
     const load = async () => {
-      const data = await communityApi.listActive(undefined, 200).catch(() => []);
-      if (active) setReports(data as CommunityReport[]);
+      const [rData, nData] = await Promise.all([
+        communityApi.listActive(undefined, 200).catch(() => []),
+        nodesApi.listNodes().catch(() => []),
+      ]);
+      if (active) {
+        setReports(rData as CommunityReport[]);
+        setIotNodes(nData as any[]);
+      }
     };
     load();
 
@@ -100,6 +121,7 @@ const AirMap = () => {
       active = false;
     };
   }, []);
+
 
   useCommunityRealtime({
     onNew: (r) =>
@@ -125,24 +147,32 @@ const AirMap = () => {
   useEffect(() => {
     if (!mapReady || !leafletMap) return;
     fetchStations();
-    const handler = () => fetchStations();
-    leafletMap.on('moveend', handler);
+    setMapZoom(leafletMap.getZoom());
+
+    const onMoveEnd = () => fetchStations();
+    const onZoomEnd = () => setMapZoom(leafletMap.getZoom());
+
+    leafletMap.on('moveend', onMoveEnd);
+    leafletMap.on('zoomend', onZoomEnd);
     return () => {
-      leafletMap.off('moveend', handler);
+      leafletMap.off('moveend', onMoveEnd);
+      leafletMap.off('zoomend', onZoomEnd);
     };
   }, [mapReady, leafletMap, fetchStations]);
 
-  // ---- Render overlays ----
+  // ---- Render overlays với clustering ----
   useEffect(() => {
     if (!mapReady || !leafletMap || !window.L) return;
     const L = window.L;
     const map = leafletMap;
 
+    // Xoá markers cũ
     overlayMarkersRef.current.forEach((marker) => {
       try { map.removeLayer(marker); } catch { /* noop */ }
     });
     overlayMarkersRef.current = [];
 
+    // --- Search pin ---
     if (searchPin) {
       const pinIcon = L.divIcon({
         className: 'search-pin-marker',
@@ -154,35 +184,124 @@ const AirMap = () => {
       overlayMarkersRef.current.push(m);
     }
 
-    stations.forEach((s) => {
-      const color = getAqiCircleColor(s.aqi);
-      const icon = L.divIcon({
-        className: 'waqi-station-marker',
-        html: `<div style="background:${color};color:#000;font-weight:700;font-size:11px;padding:2px 6px;border-radius:10px;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.4);font-family:sans-serif">${s.aqi}</div>`,
-        iconSize: [34, 20],
-        iconAnchor: [17, 10],
-      });
-      const marker = L.marker([s.lat, s.lng], { icon }).addTo(map);
-      marker.bindPopup(
-        `<div style="font-family:sans-serif"><b>${s.station ?? 'WAQI Station'}</b><br>AQI: <b>${s.aqi}</b><br><small>${lang === 'vi' ? 'Trạm WAQI · đo thật' : 'WAQI station · measured'}</small></div>`
-      );
-      overlayMarkersRef.current.push(marker);
-    });
+    // --- WAQI Stations với clustering ---
+    if (stations.length > 0) {
+      const b = map.getBounds();
+      const bounds = { west: b.getWest(), south: b.getSouth(), east: b.getEast(), north: b.getNorth() };
+      const waqiSC = buildWaqiCluster(stations);
+      const waqiPoints = getWaqiClusters(waqiSC, bounds, mapZoom, stations);
 
-    if (layers.community) {
-      reports.forEach((report) => {
-        const meta = KIND_LABEL[report.kind] ?? KIND_LABEL.other;
-        const label = report.text ?? (lang === 'vi' ? meta.vi : meta.en);
-        const circle = L.circle([report.lat, report.lng], {
-          radius: 400, color: '#FF6B6B', fillColor: '#FF6B6B', fillOpacity: 0.35, weight: 1, dashArray: '4 4',
-        }).addTo(map);
-        circle.bindPopup(
-          `<div style="font-family:sans-serif"><b>${meta.icon} ${label}</b><br><small>${timeAgo(report.created_at, lang)}</small></div>`
-        );
-        overlayMarkersRef.current.push(circle);
+      waqiPoints.forEach((point) => {
+        if (point.type === 'cluster') {
+          const { html, size, anchor } = renderWaqiMarkerHtml(point);
+          const icon = L.divIcon({ className: 'waqi-cluster-marker', html, iconSize: size, iconAnchor: anchor });
+          const m = L.marker([point.lat, point.lng], { icon }).addTo(map);
+          // Click cluster → zoom vào
+          m.on('click', () => {
+            const targetZoom = Math.min(point.expansion_zoom, map.getMaxZoom());
+            map.flyTo([point.lat, point.lng], targetZoom, { duration: 0.5 });
+          });
+          overlayMarkersRef.current.push(m);
+        } else if (point.type === 'waqi') {
+          const { html, size, anchor } = renderWaqiMarkerHtml(point);
+          const icon = L.divIcon({ className: 'waqi-station-marker', html, iconSize: size, iconAnchor: anchor });
+          const marker = L.marker([point.lat, point.lng], { icon }).addTo(map);
+          marker.bindPopup(
+            `<div style="font-family:sans-serif"><b>${point.station.station ?? 'WAQI Station'}</b><br>AQI: <b>${point.station.aqi}</b><br><small>${lang === 'vi' ? 'Trạm WAQI · đo thật' : 'WAQI station · measured'}</small></div>`
+          );
+          overlayMarkersRef.current.push(marker);
+        }
       });
     }
-  }, [mapReady, leafletMap, layers.community, reports, stations, lang, searchPin]);
+
+    // --- Community Reports với clustering ---
+    if (layers.community && reports.length > 0) {
+      const b = map.getBounds();
+      const bounds = { west: b.getWest(), south: b.getSouth(), east: b.getEast(), north: b.getNorth() };
+      const reportSC = buildReportCluster(reports);
+      const reportPoints = getReportClusters(reportSC, bounds, mapZoom, reports);
+
+      reportPoints.forEach((point) => {
+        if (point.type === 'cluster') {
+          const icon = L.divIcon({
+            className: 'report-cluster-marker',
+            html: `<div style="background:#FF6B6B;width:34px;height:34px;border-radius:50%;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-family:sans-serif;font-weight:800;font-size:12px;color:#fff;cursor:pointer">${point.count}</div>`,
+            iconSize: [34, 34],
+            iconAnchor: [17, 17],
+          });
+          const m = L.marker([point.lat, point.lng], { icon }).addTo(map);
+          m.bindPopup(getReportClusterPopupHtml(point.count, lang));
+          m.on('click', () => {
+            const targetZoom = Math.min(point.expansion_zoom, map.getMaxZoom());
+            map.flyTo([point.lat, point.lng], targetZoom, { duration: 0.5 });
+          });
+          overlayMarkersRef.current.push(m);
+        } else if (point.type === 'report') {
+          const meta = KIND_LABEL[point.report.kind] ?? KIND_LABEL.other;
+          const label = point.report.text ?? (lang === 'vi' ? meta.vi : meta.en);
+          const circle = L.circle([point.lat, point.lng], {
+            radius: 400, color: '#FF6B6B', fillColor: '#FF6B6B', fillOpacity: 0.35, weight: 1, dashArray: '4 4',
+          }).addTo(map);
+          circle.bindPopup(
+            `<div style="font-family:sans-serif"><b>${meta.icon} ${label}</b><br><small>${timeAgo(point.report.created_at, lang)}</small></div>`
+          );
+          overlayMarkersRef.current.push(circle);
+        }
+      });
+    }
+
+    // --- Physical IoT Nodes với hiệu ứng glowing ring ---
+    if (iotNodes.length > 0) {
+      iotNodes.forEach((node) => {
+        const isSolar = node.power_source === 'solar' || node.edition === 'outdoor_solar';
+        const color = getAqiCircleColor(node.aqi);
+        const icon = L.divIcon({
+          className: 'iot-physical-node-marker',
+          html: `<div style="
+            position:relative;
+            background:linear-gradient(135deg, #06b6d4, #3b82f6);
+            padding:3px 8px;
+            border-radius:14px;
+            border:2px solid #fff;
+            box-shadow:0 0 12px rgba(6,182,212,0.8), 0 2px 6px rgba(0,0,0,0.5);
+            font-family:sans-serif;
+            display:flex;align-items:center;gap:4px;
+            color:#fff;font-weight:800;font-size:11px;
+            cursor:pointer;
+          ">
+            <span>⚡ ${node.aqi}</span>
+            <span style="font-size:9px;opacity:0.9;font-weight:600">AQI</span>
+          </div>`,
+          iconSize: [60, 24],
+          iconAnchor: [30, 12],
+        });
+
+        const m = L.marker([node.lat, node.lng], { icon }).addTo(map);
+        m.bindPopup(`
+          <div style="font-family:sans-serif;padding:2px">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+              <span style="background:#06b6d4;color:#fff;font-weight:800;font-size:10px;padding:2px 6px;border-radius:4px">⚡ NODE AIRWEAVE</span>
+              <b style="font-size:13px">${node.name}</b>
+            </div>
+            <div style="font-size:11px;color:#444">Khu vực: <b>${node.organization_name || node.location_name || 'Vi vùng tại chỗ'}</b></div>
+            <hr style="margin:6px 0;border:none;border-top:1px solid #eee">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px">
+              <div>Chỉ số AQI: <b style="color:#06b6d4">${node.aqi}</b></div>
+              <div>Bụi PM2.5: <b>${node.pm25} µg/m³</b></div>
+              <div>Nhiệt độ: <b>${node.temperature}°C</b></div>
+              <div>Độ ẩm: <b>${node.humidity || 60}%</b></div>
+            </div>
+            <div style="font-size:10px;color:#888;margin-top:6px;font-style:italic">
+              * Dữ liệu đo thực tế từ Node cảm biến tại chỗ
+            </div>
+          </div>
+        `);
+        overlayMarkersRef.current.push(m);
+      });
+    }
+  }, [mapReady, leafletMap, layers.community, reports, stations, iotNodes, lang, searchPin, mapZoom]);
+
+
 
   // Center on user location whenever it changes. Zoom in tighter when GPS is
   // actually granted so the user lands at street level, not city level.
@@ -270,13 +389,17 @@ const AirMap = () => {
         ? ['GPS', 'AQI thời gian thực', 'Bảo vệ sức khỏe']
         : ['GPS', 'Real-time AQI', 'Health protection']}
     >
-    <div className="h-full min-h-0 flex flex-col overflow-hidden rounded-2xl border border-border bg-card/30">
+    <div className="h-full min-h-0 flex flex-col overflow-hidden rounded-2xl border border-border bg-card/30 space-y-2 p-2">
+      {/* Node Proximity Connection Badge */}
+      <NodeProximityBadge matchedNode={proximityNode} distanceMeters={proximityDistance} />
+
       <MapLocationBar
         label={location.label}
         fallbackText={lang === 'vi' ? 'Đang xác định...' : 'Locating...'}
         accuracy={location.accuracy}
         isRefining={location.isRefining}
       />
+
 
       <MapOverlayControls
         lang={lang}

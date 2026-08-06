@@ -226,3 +226,88 @@ model CommunityReport {
   @@index([expires_at, lat, lng])
   @@map("community_reports")
 }
+
+model Organization {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  code        String   @unique
+  type        String   @default("school") // school | hospital | office | factory | residential
+  address     String?
+  lat         Float?
+  lng         Float?
+  contact_name String?
+  contact_phone String?
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime @updatedAt @db.Timestamptz(6)
+
+  users       OrganizationUser[]
+  nodes       IotNode[]
+
+  @@map("organizations")
+}
+
+model OrganizationUser {
+  id              String   @id @default(uuid()) @db.Uuid
+  organization_id String   @db.Uuid
+  user_id         String   @db.Uuid
+  role            String   @default("member") // admin | manager | member
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([organization_id, user_id])
+  @@map("organization_users")
+}
+
+model IotNode {
+  id              String   @id @default(uuid()) @db.Uuid
+  chip_id         String   @unique
+  name            String
+  organization_id String?  @db.Uuid
+  lat             Float
+  lng             Float
+  location_name   String?
+  status          String   @default("online") // online | offline | maintenance
+  battery         Int      @default(100) // 0 - 100%
+  rssi            Int      @default(-65) // Signal strength dBm
+  edition         String   @default("outdoor_solar") // outdoor_solar | indoor_grid
+  power_source    String   @default("solar") // solar | grid
+  hardware_ver    String   @default("ESP32-v2")
+  mqtt_topic      String?
+
+  last_seen_at    DateTime @default(now()) @db.Timestamptz(6)
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @updatedAt @db.Timestamptz(6)
+
+  organization Organization?  @relation(fields: [organization_id], references: [id], onDelete: SetNull)
+  telemetry    IotTelemetry[]
+
+  @@index([organization_id])
+  @@index([lat, lng])
+  @@map("iot_nodes")
+}
+
+model IotTelemetry {
+  id           String   @id @default(uuid()) @db.Uuid
+  node_id      String   @db.Uuid
+  pm25         Float
+  pm10         Float
+  aqi          Int
+  temperature  Float?
+  humidity     Float?
+  uv_index     Float?
+  co2          Float?   // Nồng độ CO2 (ppm)
+  voc_index    Float?   // Chỉ số khí độc VOCs (0 - 500)
+  battery      Int?
+  rssi         Int?
+  recorded_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  node IotNode @relation(fields: [node_id], references: [id], onDelete: Cascade)
+
+
+
+  @@index([node_id, recorded_at DESC])
+  @@map("iot_telemetry")
+}
+

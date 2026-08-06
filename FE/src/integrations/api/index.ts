@@ -261,5 +261,48 @@ export const configApi = {
   onesignal: () => api.get<{ appId: string | null }>('/config/onesignal'),
 };
 
+// ---------- IoT Nodes & Organizations ----------
+
+export const nodesApi = {
+  adminStats: () => api.get<any>('/nodes/admin/stats'),
+  simulatorStatus: () => api.get<{ isSimulating: boolean }>('/nodes/admin/simulator/status'),
+  toggleSimulator: () => api.post<{ isSimulating: boolean }>('/nodes/admin/simulator/toggle'),
+
+  listOrganizations: () => api.get<any[]>('/nodes/organizations'),
+  createOrganization: (payload: {
+    name: string;
+    code: string;
+    type?: string;
+    address?: string;
+    lat?: number;
+    lng?: number;
+    contact_name?: string;
+    contact_phone?: string;
+  }) => api.post<any>('/nodes/organizations', payload),
+
+  listNodes: (orgId?: string) => api.get<any[]>('/nodes/list', { query: { orgId } }),
+  getNodeDetails: (id: string) => api.get<any>(`/nodes/details/${id}`),
+  createNode: (payload: {
+    chip_id: string;
+    name: string;
+    organization_id?: string;
+    lat: number;
+    lng: number;
+    location_name?: string;
+    hardware_ver?: string;
+  }) => api.post<any>('/nodes/create', payload),
+  assignNodeToOrg: (nodeId: string, orgId: string) =>
+    api.patch<any>(`/nodes/assign/${nodeId}/org/${orgId}`),
+
+  autoDiscover: (payload: { chip_id: string; hardware_ver?: string; edition?: string; mac?: string }) =>
+    api.post<any>('/nodes/autodiscover', payload),
+
+  getUnassigned: () => api.get<any[]>('/nodes/unassigned'),
+
+  getOrgDashboard: (orgId: string) => api.get<any>(`/nodes/org-dashboard/${orgId}`),
+};
+
+
 export type { AuthUser };
 export * from './types';
+

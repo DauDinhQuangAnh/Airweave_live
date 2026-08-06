@@ -1,0 +1,18 @@
+# Dependencies
+**/node_modules/
+
+# Build output
+BE/dist/
+FE/dist/
+
+# Env & secrets
+**/.env
+!**/.env.example
+
+# Uploads runtime
+BE/uploads/avatars/*
+!BE/uploads/avatars/.gitkeep
+
+# Logs & misc
+*.log
+.DS_Store

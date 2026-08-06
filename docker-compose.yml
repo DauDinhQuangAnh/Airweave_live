@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: airweave-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: airweave
+      POSTGRES_PASSWORD: airweave_local_pw
+      POSTGRES_DB: airweave
+    # Dùng 5433 ở host để tránh đụng Postgres đã cài sẵn trên máy (đang chiếm 5432)
+    ports:
+      - "5433:5432"
+    volumes:
+      - airweave_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airweave -d airweave"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  airweave_pgdata:

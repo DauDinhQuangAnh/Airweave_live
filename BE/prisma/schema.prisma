@@ -1,0 +1,228 @@
+// AirWeave — PostgreSQL schema (thay thế Supabase)
+// Tên field giữ nguyên snake_case để JSON trả về khớp 100% với shape cũ của Supabase.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Thay thế auth.users của Supabase
+model User {
+  id             String    @id @default(uuid()) @db.Uuid
+  email          String    @unique
+  password_hash  String?
+  email_verified Boolean   @default(false)
+  google_id      String?   @unique
+  provider       String    @default("email") // email | google
+  is_active      Boolean   @default(true)
+  last_login_at  DateTime? @db.Timestamptz(6)
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime  @updatedAt @db.Timestamptz(6)
+
+  profile           Profile?
+  preferences       UserPreference?
+  live_context      UserLiveContext?
+  locations         UserLocation[]
+  login_history     LoginHistory[]
+  medical_profiles  MedicalProfile[]
+  medical_conditions MedicalCondition[]
+  sos_events        SosEvent[]
+  community_reports CommunityReport[]
+  refresh_tokens    RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id         String   @id @default(uuid()) @db.Uuid
+  user_id    String   @db.Uuid
+  token_hash String   @unique
+  user_agent String?
+  ip_address String?
+  expires_at DateTime @db.Timestamptz(6)
+  revoked_at DateTime? @db.Timestamptz(6)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@map("refresh_tokens")
+}
+
+model Profile {
+  id                   String    @id @default(uuid()) @db.Uuid
+  user_id              String    @unique @db.Uuid
+  display_name         String?
+  avatar_url           String?
+  phone                String?
+  date_of_birth        DateTime? @db.Date
+  account_tier         String    @default("free")
+  onboarding_completed Boolean   @default(false)
+  created_at           DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime  @updatedAt @db.Timestamptz(6)
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("profiles")
+}
+
+model UserPreference {
+  id                      String    @id @default(uuid()) @db.Uuid
+  user_id                 String    @unique @db.Uuid
+  health_tier             String[]  @default(["self"])
+  active_hours            String[]  @default(["morning_rush"])
+  commute_type            String[]  @default(["motorbike"])
+  medical_history         String[]  @default([])
+  purifier_status         String    @default("not_interested")
+  route_priority          String    @default("balanced")
+  alert_mode              String    @default("always")
+  sensitive_group         String    @default("none")
+  custom_sensitivity_note String?
+  not_sure                Boolean   @default(false)
+  alert_threshold         Int       @default(100)
+  high_exposure           Boolean   @default(false)
+  affiliate_target        Boolean   @default(false)
+  notify_enabled          Boolean   @default(true)
+  quiet_hours_start       Int       @default(22)
+  quiet_hours_end         Int       @default(6)
+  last_alert_aqi          Int?
+  last_alert_at           DateTime? @db.Timestamptz(6)
+  created_at              DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime  @updatedAt @db.Timestamptz(6)
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
+}
+
+model UserLocation {
+  id            String   @id @default(uuid()) @db.Uuid
+  user_id       String   @db.Uuid
+  location_type String // home | work | school
+  label         String
+  lat           Float
+  lng           Float
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @updatedAt @db.Timestamptz(6)
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, location_type])
+  @@map("user_locations")
+}
+
+model UserLiveContext {
+  id                  String   @id @default(uuid()) @db.Uuid
+  user_id             String   @unique @db.Uuid
+  label               String?
+  lat                 Float
+  lng                 Float
+  accuracy            Int?
+  aqi                 Int?
+  pm25                Float?
+  pm10                Float?
+  temperature         Int?
+  humidity            Int?
+  wind_speed          Int?
+  wind_direction      String?
+  source              String   @default("open-meteo")
+  station             String?
+  snapshot_updated_at DateTime @default(now()) @db.Timestamptz(6)
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime @updatedAt @db.Timestamptz(6)
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("user_live_contexts")
+}
+
+model LoginHistory {
+  id         String   @id @default(uuid()) @db.Uuid
+  user_id    String   @db.Uuid
+  login_at   DateTime @default(now()) @db.Timestamptz(6)
+  ip_address String?
+  user_agent String?
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, login_at])
+  @@map("login_history")
+}
+
+model MedicalProfile {
+  id              String   @id @default(uuid()) @db.Uuid
+  user_id         String   @db.Uuid
+  relation        String   @default("self")
+  display_name    String
+  birth_year      Int?
+  blood_type      String?
+  emergency_phone String?
+  emergency_name  String?
+  avatar_emoji    String?  @default("🧑")
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @updatedAt @db.Timestamptz(6)
+
+  user       User               @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  conditions MedicalCondition[]
+  sos_events SosEvent[]
+
+  @@index([user_id])
+  @@map("medical_profiles")
+}
+
+model MedicalCondition {
+  id         String   @id @default(uuid()) @db.Uuid
+  profile_id String   @db.Uuid
+  user_id    String   @db.Uuid
+  category   String
+  code       String
+  note       String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  profile MedicalProfile @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+  user    User           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([profile_id, category, code])
+  @@index([profile_id])
+  @@map("medical_conditions")
+}
+
+model SosEvent {
+  id           String   @id @default(uuid()) @db.Uuid
+  user_id      String   @db.Uuid
+  profile_id   String   @db.Uuid
+  lat          Float?
+  lng          Float?
+  aqi          Int?
+  pm25         Float?
+  share_token  String   @unique @default(uuid()) @db.Uuid
+  triggered_at DateTime @default(now()) @db.Timestamptz(6)
+  expires_at   DateTime @db.Timestamptz(6)
+
+  user    User           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  profile MedicalProfile @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([share_token])
+  @@map("sos_events")
+}
+
+model CommunityReport {
+  id         String   @id @default(uuid()) @db.Uuid
+  user_id    String   @db.Uuid
+  lat        Float
+  lng        Float
+  kind       String   @default("smoke")
+  text       String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  expires_at DateTime @db.Timestamptz(6)
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([expires_at, lat, lng])
+  @@map("community_reports")
+}

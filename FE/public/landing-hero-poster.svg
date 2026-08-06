@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="Air quality map preview">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e8fbf7"/>
+      <stop offset="0.46" stop-color="#dff3ff"/>
+      <stop offset="1" stop-color="#f2efff"/>
+    </linearGradient>
+    <linearGradient id="haze" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".15"/>
+      <stop offset=".7" stop-color="#ffffff" stop-opacity=".62"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity=".9"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#sky)"/>
+  <path d="M0 620 C180 570 330 650 500 600 S830 500 1010 560 1320 690 1600 590 V900 H0 Z" fill="#cdeee6"/>
+  <path d="M0 690 C220 625 390 720 630 660 S980 575 1210 650 1420 735 1600 675 V900 H0 Z" fill="#d8e9ff"/>
+  <path d="M0 180 C260 120 420 210 620 170 S1000 80 1600 130 V0 H0 Z" fill="#9ee7dd" opacity=".28"/>
+  <path d="M0 360 C260 300 500 395 770 330 S1190 245 1600 310 V170 C1240 135 990 190 720 245 S250 315 0 250 Z" fill="#8dd8fb" opacity=".22"/>
+  <g opacity=".22" fill="none" stroke="#0f172a" stroke-width="1">
+    <path d="M120 540 H1480"/>
+    <path d="M180 500 H1420"/>
+    <path d="M260 460 H1340"/>
+  </g>
+  <g opacity=".3" fill="#0f172a">
+    <rect x="230" y="515" width="42" height="145" rx="3"/>
+    <rect x="295" y="465" width="54" height="195" rx="3"/>
+    <rect x="376" y="535" width="48" height="125" rx="3"/>
+    <rect x="1080" y="505" width="56" height="155" rx="3"/>
+    <rect x="1160" y="450" width="64" height="210" rx="3"/>
+    <rect x="1252" y="525" width="48" height="135" rx="3"/>
+  </g>
+  <rect width="1600" height="900" fill="url(#haze)"/>
+</svg>

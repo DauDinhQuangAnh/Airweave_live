@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AirWeave</title>
+    <meta name="description" content="AirWeave — theo dõi chất lượng không khí thời gian thực, gợi ý cá nhân hoá và bảo vệ sức khoẻ" />
+    <meta name="author" content="AirWeave" />
+
+    <meta property="og:title" content="AirWeave" />
+    <meta property="og:description" content="Theo dõi chất lượng không khí thời gian thực, gợi ý cá nhân hoá và bảo vệ sức khoẻ" />
+    <meta property="og:type" content="website" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+
+  <body>
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('airweave-theme');
+          if (!t) { t = 'dark'; localStorage.setItem('airweave-theme', 'dark'); }
+          document.documentElement.classList.remove('light', 'dark');
+          document.documentElement.classList.add(t);
+          document.documentElement.style.colorScheme = t;
+        } catch (e) {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

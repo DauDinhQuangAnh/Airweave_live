@@ -1,0 +1,316 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 100% 99%;
+    --foreground: 213 45% 32%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 213 45% 32%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 213 45% 32%;
+
+    --primary: 213 45% 32%;
+    --primary-foreground: 0 100% 99%;
+
+    --secondary: 210 30% 95%;
+    --secondary-foreground: 213 45% 32%;
+
+    --muted: 210 20% 96%;
+    --muted-foreground: 213 20% 55%;
+
+    --accent: 210 30% 93%;
+    --accent-foreground: 213 45% 32%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 210 20% 90%;
+    --input: 210 20% 90%;
+    --ring: 213 45% 32%;
+
+    --radius: 0.75rem;
+
+    /* AQI Colors */
+    --aqi-good: 120 100% 45%;
+    --aqi-moderate: 60 100% 50%;
+    --aqi-unhealthy-sensitive: 30 100% 50%;
+    --aqi-unhealthy: 0 100% 50%;
+    --aqi-very-unhealthy: 288 39% 41%;
+    --aqi-hazardous: 348 100% 25%;
+
+    /* Brand */
+    --snow-white: 0 100% 99%;
+    --estate-blue: 213 45% 32%;
+    --estate-blue-light: 213 45% 45%;
+
+    /* Glassmorphism */
+    --glass-bg: 0 0% 100% / 0.7;
+    --glass-border: 0 0% 100% / 0.3;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 220 20% 10%;
+    --foreground: 210 20% 90%;
+
+    --card: 220 18% 14%;
+    --card-foreground: 210 20% 90%;
+
+    --popover: 220 18% 14%;
+    --popover-foreground: 210 20% 90%;
+
+    --primary: 213 60% 65%;
+    --primary-foreground: 220 20% 10%;
+
+    --secondary: 220 15% 20%;
+    --secondary-foreground: 210 20% 90%;
+
+    --muted: 220 15% 18%;
+    --muted-foreground: 210 15% 60%;
+
+    --accent: 220 15% 22%;
+    --accent-foreground: 210 20% 90%;
+
+    --destructive: 0 70% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 15% 22%;
+    --input: 220 15% 22%;
+    --ring: 213 60% 65%;
+
+    --snow-white: 220 20% 10%;
+    --estate-blue: 213 60% 65%;
+    --estate-blue-light: 213 55% 75%;
+
+    --glass-bg: 220 20% 14% / 0.7;
+    --glass-border: 220 20% 25% / 0.3;
+
+    --sidebar-background: 220 18% 12%;
+    --sidebar-foreground: 210 20% 85%;
+    --sidebar-primary: 213 60% 65%;
+    --sidebar-primary-foreground: 220 20% 10%;
+    --sidebar-accent: 220 15% 18%;
+    --sidebar-accent-foreground: 210 20% 85%;
+    --sidebar-border: 220 15% 20%;
+    --sidebar-ring: 213 60% 65%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Montserrat', 'Segoe UI', 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
+  }
+
+  html.map-route-lock,
+  body.map-route-lock {
+    height: 100svh;
+    overflow: hidden !important;
+    overscroll-behavior: none;
+  }
+
+  body.map-route-lock #root {
+    height: 100svh;
+    overflow: hidden;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Montserrat', 'Segoe UI', 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
+    font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
+  }
+}
+
+@layer utilities {
+  .font-heading {
+    font-family: 'Montserrat', 'Segoe UI', 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
+  }
+
+  .font-body {
+    font-family: 'Montserrat', 'Segoe UI', 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
+  }
+
+  .glass {
+    background: hsla(var(--glass-bg));
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid hsla(var(--glass-border));
+    box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.15);
+  }
+
+  .glass-card {
+    @apply glass rounded-2xl;
+  }
+
+  .glass-morphism {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 20px;
+    box-shadow: 
+      0 8px 32px rgba(0, 0, 0, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    transition: background 0.3s, border 0.3s;
+  }
+  .glass-morphism:hover {
+    background: rgba(255, 255, 255, 0.07);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .aqi-good { background-color: #00E400; color: #000; }
+  .aqi-moderate { background-color: #FFFF00; color: #000; }
+  .aqi-unhealthy-sensitive { background-color: #FF7E00; color: #fff; }
+  .aqi-unhealthy { background-color: #FF0000; color: #fff; }
+  .aqi-very-unhealthy { background-color: #8F3F97; color: #fff; }
+  .aqi-hazardous { background-color: #7E0023; color: #fff; }
+
+  @keyframes pulse-ripple {
+    0% { transform: scale(1); opacity: 0.6; }
+    50% { transform: scale(1.8); opacity: 0.2; }
+    100% { transform: scale(2.5); opacity: 0; }
+  }
+
+  .animate-pulse-ripple {
+    animation: pulse-ripple 2s ease-out infinite;
+  }
+
+  @keyframes ticker {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+  .animate-ticker {
+    animation: ticker 30s linear infinite;
+  }
+
+  /* Reduce motion / mobile-friendly: respect user preference + cut blur on phones */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-ticker,
+    .animate-pulse-ripple,
+    .animate-pulse,
+    .animate-ping,
+    .animate-spin {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+    }
+  }
+
+  @media (max-width: 767px) {
+    /* Lighter glassmorphism on mobile */
+    .glass,
+    .glass-card {
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+    .glass-morphism {
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+    /* Disable hover scale on touch devices to avoid sticky hover */
+    .hover-scale:hover {
+      transform: none;
+    }
+  }
+
+  /* Hide scrollbar for horizontal tab strips */
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  @keyframes slide-in-toast {
+    0% { transform: translateX(330px); opacity: 0; }
+    100% { transform: translateX(0); opacity: 1; }
+  }
+  .animate-slide-in-toast {
+    animation: slide-in-toast 0.4s ease-out;
+  }
+
+  .windy-map-container {
+    position: relative;
+    overflow: hidden;
+    overscroll-behavior: none;
+    contain: layout paint size;
+  }
+
+  .windy-map-container,
+  .windy-map-container .leaflet-container,
+  .windy-map-container canvas {
+    width: 100%;
+    height: 100%;
+  }
+
+  .windy-map-container,
+  .windy-map-container .leaflet-container {
+    touch-action: none;
+  }
+
+  .windy-map-container #bottom,
+  .windy-map-container #mobile-ovr-select,
+  .windy-map-container #embed-zoom,
+  .windy-map-container #picker-mobile {
+    display: none !important;
+  }
+
+  .windy-map-container #logo-wrapper {
+    top: auto !important;
+    right: auto !important;
+    bottom: 0.5rem !important;
+    left: 0.5rem !important;
+    transform: scale(0.7);
+    transform-origin: bottom left;
+    opacity: 0.7;
+  }
+
+  .windy-map-container #logo-wrapper #logo {
+    left: 0 !important;
+  }
+
+  /* Native Leaflet zoom & scale controls injected by useWindyMap */
+  .windy-map-container .leaflet-control-zoom {
+    margin-top: 76px !important;
+    margin-right: 12px !important;
+    border: none !important;
+    border-radius: 9999px !important;
+    overflow: hidden;
+    box-shadow: 0 2px 8px hsl(0 0% 0% / 0.18);
+  }
+  .windy-map-container .leaflet-control-zoom a {
+    background: hsl(var(--card) / 0.95) !important;
+    color: hsl(var(--foreground)) !important;
+    border-color: hsl(var(--border)) !important;
+    backdrop-filter: blur(6px);
+  }
+  .windy-map-container .leaflet-control-scale {
+    margin-bottom: 8px !important;
+    margin-right: 12px !important;
+  }
+
+  /* Carto label overlay should not block interaction */
+  .windy-map-container .leaflet-tile-pane + .leaflet-marker-pane,
+  .windy-map-container .leaflet-overlay-pane {
+    pointer-events: auto;
+  }
+}

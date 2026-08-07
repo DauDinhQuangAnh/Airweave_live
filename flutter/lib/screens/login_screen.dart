@@ -160,29 +160,68 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 24),
 
-                // Fast Presets for Quick Testing
-                const Text(
-                  '—— Hoặc Thử nghiệm Nhanh 1-Click ——',
-                  style: TextStyle(color: Colors.white38, fontSize: 11),
+                // Fast Presets for Quick Testing & Admin Entry Point
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.amber.withOpacity(0.15),
+                        Colors.orange.withOpacity(0.08),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.amberAccent.withOpacity(0.4)),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Icon(Icons.shield_rounded, color: Colors.amberAccent, size: 18),
+                          SizedBox(width: 6),
+                          Text(
+                            'Bạn là Quản trị viên / Quản lý Trạm?',
+                            style: TextStyle(
+                              color: Colors.amberAccent,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Đăng nhập với tài khoản admin / admin để mở toàn bộ tính năng Bảng điều khiển Quản trị IoT Nodes.',
+                        style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 10),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _fillAdminPreset,
+                          icon: const Icon(Icons.bolt, color: Colors.amberAccent, size: 18),
+                          label: const Text(
+                            '🔑 1-Click Đăng nhập Admin (admin/admin)',
+                            style: TextStyle(color: Colors.amberAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            backgroundColor: Colors.amber.withOpacity(0.1),
+                            side: const BorderSide(color: Colors.amberAccent),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 12),
 
+                // Nút Đăng nhập Người dùng Demo & Khách
                 Row(
                   children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _fillAdminPreset,
-                        icon: const Icon(Icons.bolt, color: Colors.amberAccent, size: 18),
-                        label: const Text('Admin (admin/admin)', style: TextStyle(color: Colors.amberAccent, fontSize: 11)),
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Colors.amberAccent),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: _fillUserPreset,
@@ -207,6 +246,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     decoration: TextDecoration.underline,
                   ),
                 ),
+
               ],
             ),
           ),

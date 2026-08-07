@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Eye, EyeOff, Home, Loader2, Lock, Mail, Wind, Zap } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Home, Loader2, Lock, Mail, Wind, Zap, Shield } from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/use-auth';
@@ -211,6 +212,32 @@ const Auth = () => {
             Trải nghiệm nhanh (Demo)
           </Button>
 
+          {/* Cổng đăng nhập Quản trị viên / Admin Entry Point */}
+          <div className="mt-5 p-3.5 rounded-xl bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-950/20 border border-amber-500/30 text-center space-y-2">
+            <div className="flex items-center justify-center gap-1.5 text-xs font-heading font-bold text-amber-400">
+              <Shield className="w-4 h-4 text-amber-400 animate-pulse" />
+              Bạn là Quản trị viên / Quản lý Trạm IoT?
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Truy cập Bảng điều khiển Quản trị IoT Nodes và Quản lý Tổ chức
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full h-8 text-xs font-heading font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/40 gap-1.5 shadow-sm"
+              onClick={() => {
+                setEmail('admin@airweave.vn');
+                setPassword('admin');
+                toast.info('Đã điền tài khoản Admin (admin/admin)! Bấm Đăng nhập để vào Portal.');
+                navigate('/admin');
+              }}
+            >
+              <Shield className="w-3.5 h-3.5" />
+              Vào Bảng điều khiển Quản trị (Admin Portal) →
+            </Button>
+          </div>
+
           {loading && (
             <p className="text-[11px] text-muted-foreground text-center mt-2 font-body">
               Đang kiểm tra phiên đăng nhập của bạn...
@@ -219,6 +246,7 @@ const Auth = () => {
           <p className="text-[11px] text-muted-foreground text-center mt-2 font-body">
             Tự động đăng nhập với tài khoản demo, không cần đăng ký
           </p>
+
         </div>
       </div>
     </div>

@@ -77,8 +77,9 @@ const SEED_NODES: SeedNode[] = [
   { chip_id: 'ESP32-CVA-01', name: 'Node Sân trường CVA', org: 'CVA-HA-NOI', lat: 21.0428, lng: 105.8286, location_name: 'Sân trung tâm', edition: 'outdoor_solar', power_source: 'solar', hardware_ver: 'ESP32-Solar-v2.1', battery: 98, rssi: -58, pm25: 18.4 },
   { chip_id: 'ESP32-CVA-02', name: 'Node Phòng Thể thao CVA', org: 'CVA-HA-NOI', lat: 21.0422, lng: 105.8281, location_name: 'Nhà thi đấu đa năng', edition: 'indoor_grid', power_source: 'grid', hardware_ver: 'ESP32-Grid-v2.1', battery: 100, rssi: -64, pm25: 14.2 },
   { chip_id: 'ESP32-BVHN-01', name: 'Node Sảnh Cấp cứu BV Hồng Ngọc', org: 'BV-HONG-NGOC', lat: 21.0405, lng: 105.8453, location_name: 'Sảnh chính Tầng 1', edition: 'indoor_grid', power_source: 'grid', hardware_ver: 'ESP32-Grid-v3.0', battery: 100, rssi: -52, pm25: 11.5 },
-  { chip_id: 'ESP32-KGN-01', name: 'Node Khuôn viên Keangnam', org: 'KEANGNAM-HN', lat: 21.0169, lng: 105.7841, location_name: 'Cổng B1', edition: 'outdoor_solar', power_source: 'solar', hardware_ver: 'ESP32-Solar-v1.0', battery: 45, rssi: -78, status: 'maintenance', pm25: 35.8 },
+  { chip_id: 'ESP32-KGN-01', name: 'Node Khuôn viên Keangnam', org: 'KEANGNAM-HN', lat: 21.0169, lng: 105.7841, location_name: 'Cổng B1', edition: 'outdoor_solar', power_source: 'solar', hardware_ver: 'ESP32-Solar-v1.0', battery: 45, rssi: -78, status: 'offline', pm25: 35.8 },
 ];
+
 
 const HANOI = { lat: 21.0285, lng: 105.8542 };
 const LEADER_KEY = 'airweave:iot:simulator:leader';
@@ -293,12 +294,11 @@ export class NodesService implements OnModuleInit, OnModuleDestroy {
 
   async getAdminStats() {
     const since24h = new Date(Date.now() - 24 * 3_600_000);
-    const [totalNodes, onlineNodes, offlineNodes, maintenanceNodes, totalOrgs, totalTelemetry24h, nodes] =
+    const [totalNodes, onlineNodes, offlineNodes, totalOrgs, totalTelemetry24h, nodes] =
       await Promise.all([
         this.prisma.iotNode.count(),
         this.prisma.iotNode.count({ where: { status: 'online' } }),
         this.prisma.iotNode.count({ where: { status: 'offline' } }),
-        this.prisma.iotNode.count({ where: { status: 'maintenance' } }),
         this.prisma.organization.count(),
         this.prisma.iotTelemetry.count({ where: { recorded_at: { gte: since24h } } }),
         this.prisma.iotNode.findMany({ include: NODE_WITH_LATEST }),
@@ -311,7 +311,6 @@ export class NodesService implements OnModuleInit, OnModuleDestroy {
       totalNodes,
       onlineNodes,
       offlineNodes,
-      maintenanceNodes,
       totalOrgs,
       avgAqi,
       totalTelemetry24h,
@@ -319,6 +318,7 @@ export class NodesService implements OnModuleInit, OnModuleDestroy {
       ingestConfigured: !!this.config.get<string>('DEVICE_INGEST_TOKEN'),
     };
   }
+
 
   // ---------- ORGANIZATIONS ----------
 

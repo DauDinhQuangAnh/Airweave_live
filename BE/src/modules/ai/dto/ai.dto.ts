@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayNotEmpty,
   IsArray,
   IsIn,
   IsNumber,
@@ -62,6 +64,8 @@ export class ChatDto {
 
   @ApiProperty({ type: [ChatMessageDto] })
   @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(50) // chặn payload khổng lồ (service chỉ gửi 12 message cuối lên model)
   @ValidateNested({ each: true })
   @Type(() => ChatMessageDto)
   messages: ChatMessageDto[];

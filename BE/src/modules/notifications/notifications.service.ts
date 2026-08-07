@@ -12,25 +12,40 @@ import { Injectable, ServiceUnavailableException, Logger, Inject, Optional } fro
 import { ConfigService } from '@nestjs/config';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import type Redis from 'ioredis';
 import { fetchJson } from '../../common/cache.util';
 import { PrismaService } from '../../prisma/prisma.service';
+import { REDIS_CLIENT } from '../../common/redis.module';
 import { SendPushDto } from './dto/notification.dto';
 import { PUSH_QUEUE, PushJobData } from './push.processor';
+
+interface OneSignalCreds {
+  appId: string;
+  restKey: string;
+}
 
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
+  /** Fallback cooldown khi không có Redis (chỉ đúng trong 1 instance). */
+  private readonly localCooldown = new Map<string, number>();
 
   constructor(
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     @Optional() @InjectQueue(PUSH_QUEUE) private readonly pushQueue: Queue | null,
+    @Optional() @Inject(REDIS_CLIENT) private readonly redis: Redis | null,
   ) {}
 
-  async sendPush(requesterId: string, dto: SendPushDto) {
+  private getOneSignalCreds(): OneSignalCreds | null {
     const appId = this.config.get<string>('ONESIGNAL_APP_ID');
     const restKey = this.config.get<string>('ONESIGNAL_REST_API_KEY');
-    if (!appId || !restKey) {
+    return appId && restKey ? { appId, restKey } : null;
+  }
+
+  async sendPush(requesterId: string, dto: SendPushDto) {
+    const creds = this.getOneSignalCreds();
+    if (!creds) {
       throw new ServiceUnavailableException(
         'Chưa cấu hình ONESIGNAL_APP_ID / ONESIGNAL_REST_API_KEY trong .env',
       );
@@ -44,7 +59,6 @@ export class NotificationsService {
     }
     const recipients = allowed ? targets : [requesterId];
 
-    // Chỉ gửi khi người nhận còn bật thông báo và không nằm trong giờ yên tĩnh
     const deliverable = await this.filterByPreferences(recipients);
     if (deliverable.length === 0) {
       return {
@@ -54,13 +68,24 @@ export class NotificationsService {
       };
     }
 
+    return this.dispatch(creds, deliverable, dto.title, dto.message, dto.data);
+  }
+
+  /** Gửi/enqueue thực tế tới OneSignal — dùng chung cho push người dùng & cảnh báo hệ thống. */
+  private async dispatch(
+    creds: OneSignalCreds,
+    recipients: string[],
+    title: string,
+    message: string,
+    data?: Record<string, unknown>,
+  ) {
     const jobData: PushJobData = {
-      appId,
-      restKey,
-      title: dto.title,
-      message: dto.message,
-      userIds: deliverable,
-      data: dto.data,
+      appId: creds.appId,
+      restKey: creds.restKey,
+      title,
+      message,
+      userIds: recipients,
+      data,
     };
 
     // ✅ BullMQ async queue (Redis available)
@@ -71,24 +96,21 @@ export class NotificationsService {
         removeOnComplete: { count: 100 },
         removeOnFail: { count: 50 },
       });
-      this.logger.log(`Push enqueued — jobId: ${job.id}, recipients: ${deliverable.length}`);
-      return { success: true, queued: true, jobId: job.id, recipientCount: deliverable.length };
+      this.logger.log(`Push enqueued — jobId: ${job.id}, recipients: ${recipients.length}`);
+      return { success: true, queued: true, jobId: job.id, recipientCount: recipients.length };
     }
 
     // ⚠️ Fallback: gọi trực tiếp khi không có Redis/BullMQ
     this.logger.warn('BullMQ unavailable — gọi OneSignal trực tiếp (fallback mode)');
     const result = await fetchJson<any>('https://api.onesignal.com/notifications', 10000, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Basic ${restKey}`,
-      },
+      headers: { 'Content-Type': 'application/json', Authorization: `Basic ${creds.restKey}` },
       body: JSON.stringify({
-        app_id: appId,
-        headings: { en: dto.title, vi: dto.title },
-        contents: { en: dto.message, vi: dto.message },
-        data: dto.data ?? {},
-        include_aliases: { external_id: deliverable },
+        app_id: creds.appId,
+        headings: { en: title, vi: title },
+        contents: { en: message, vi: message },
+        data: data ?? {},
+        include_aliases: { external_id: recipients },
         target_channel: 'push',
       }),
     });
@@ -124,48 +146,106 @@ export class NotificationsService {
   }
 
   // --- IOT NODE SMART ALERTS ENGINE (CO2 & UV THRESHOLDS) ---
-  private readonly alertCooldownMap = new Map<string, number>();
 
-  async evaluateIotNodeAlerts(node: any, telemetry: { co2?: number; uv_index?: number; aqi?: number }) {
-    const now = Date.now();
-    const COOLDOWN_MS = 30 * 60 * 1000; // Cooldown 30 phút giữa 2 lần bắn cảnh báo cho cùng 1 Node
+  private static readonly COOLDOWN_MS = 30 * 60 * 1000; // 30 phút giữa 2 cảnh báo cùng loại/node
 
-    // 1. Cảnh báo Khí CO2 ngột ngạt trong phòng học / văn phòng (CO2 > 1200 ppm)
-    if (telemetry.co2 && telemetry.co2 > 1200) {
-      const cooldownKey = `co2:${node.id}`;
-      const lastAlert = this.alertCooldownMap.get(cooldownKey) ?? 0;
-
-      if (now - lastAlert > COOLDOWN_MS) {
-        this.alertCooldownMap.set(cooldownKey, now);
-        this.logger.warn(`🚨 SMART ALERT: Node [${node.name}] phát hiện CO2 cao: ${telemetry.co2} ppm`);
-
-        const title = `⚠️ CẢNH BÁO THÔNG GIÓ (CO2: ${telemetry.co2} ppm)`;
-        const message = `Khu vực [${node.name} - ${node.organization_name || 'Cơ quan'}] đang bị bí khí (CO2: ${telemetry.co2} ppm). Khuyến nghị giáo viên / quản lý mở cửa sổ thông gió ngay!`;
-
-        // Push alert to organization managers
-        void this.sendAlertToAdmins(title, message, { nodeId: node.id, co2: telemetry.co2 });
-      }
+  async evaluateIotNodeAlerts(
+    node: { id: string; name: string; organization_id: string | null; organization_name: string | null },
+    telemetry: { co2?: number; uv_index?: number; aqi?: number },
+  ) {
+    // 1. Cảnh báo CO2 ngột ngạt (> 1200 ppm) trong phòng học / văn phòng
+    if (telemetry.co2 && telemetry.co2 > 1200 && (await this.acquireAlertSlot(`co2:${node.id}`))) {
+      const title = `⚠️ CẢNH BÁO THÔNG GIÓ (CO2: ${telemetry.co2} ppm)`;
+      const message = `Khu vực [${node.name} - ${node.organization_name || 'Cơ quan'}] đang bị bí khí (CO2: ${telemetry.co2} ppm). Khuyến nghị mở cửa sổ thông gió ngay!`;
+      await this.sendAlertToManagers(node.organization_id, title, message, { nodeId: node.id, co2: telemetry.co2 });
     }
 
-    // 2. Cảnh báo Tia UV cực tím nguy hại ngoài trời (UV Index > 8.0)
-    if (telemetry.uv_index && telemetry.uv_index >= 8.0) {
-      const cooldownKey = `uv:${node.id}`;
-      const lastAlert = this.alertCooldownMap.get(cooldownKey) ?? 0;
-
-      if (now - lastAlert > COOLDOWN_MS) {
-        this.alertCooldownMap.set(cooldownKey, now);
-        this.logger.warn(`☀️ SMART ALERT: Node [${node.name}] phát hiện UV Rất Cao: ${telemetry.uv_index}`);
-
-        const title = `☀️ CẢNH BÁO TIA UV RẤT CAO (${telemetry.uv_index})`;
-        const message = `Sân trường / Khuôn viên [${node.name}] chỉ số UV ở mức Rất Cao (${telemetry.uv_index}). Khuyến nghị học sinh tập thể dục trong nhà và thoa kem chống nắng!`;
-
-        void this.sendAlertToAdmins(title, message, { nodeId: node.id, uv: telemetry.uv_index });
-      }
+    // 2. Cảnh báo tia UV rất cao (>= 8.0) ngoài trời
+    if (telemetry.uv_index && telemetry.uv_index >= 8.0 && (await this.acquireAlertSlot(`uv:${node.id}`))) {
+      const title = `☀️ CẢNH BÁO TIA UV RẤT CAO (${telemetry.uv_index})`;
+      const message = `Sân trường / Khuôn viên [${node.name}] chỉ số UV ở mức Rất Cao (${telemetry.uv_index}). Khuyến nghị vào trong nhà và thoa kem chống nắng!`;
+      await this.sendAlertToManagers(node.organization_id, title, message, { nodeId: node.id, uv: telemetry.uv_index });
     }
   }
 
-  private async sendAlertToAdmins(title: string, message: string, data: Record<string, unknown>) {
-    this.logger.log(`📢 Bắn Cảnh báo Thông minh IoT: ${title} -> ${message}`);
+  /** Gửi cảnh báo tới quản lý tổ chức của node (+ global admin theo ADMIN_EMAILS). */
+  private async sendAlertToManagers(
+    orgId: string | null,
+    title: string,
+    message: string,
+    data: Record<string, unknown>,
+  ) {
+    const creds = this.getOneSignalCreds();
+    if (!creds) {
+      this.logger.warn(`Bỏ qua cảnh báo "${title}" — chưa cấu hình OneSignal`);
+      return;
+    }
+
+    const recipients = await this.resolveAlertRecipients(orgId);
+    if (recipients.length === 0) {
+      this.logger.warn(`Không có người nhận cho cảnh báo "${title}" (org ${orgId ?? 'none'})`);
+      return;
+    }
+
+    const deliverable = await this.filterByPreferences(recipients);
+    if (deliverable.length === 0) return;
+
+    try {
+      await this.dispatch(creds, deliverable, title, message, data);
+      this.logger.log(`📢 Đã gửi cảnh báo IoT "${title}" tới ${deliverable.length} người`);
+    } catch (err) {
+      this.logger.error(`Gửi cảnh báo IoT thất bại: ${(err as Error).message}`);
+    }
+  }
+
+  /** Quản lý (admin/manager) của tổ chức + danh sách ADMIN_EMAILS toàn hệ thống. */
+  private async resolveAlertRecipients(orgId: string | null): Promise<string[]> {
+    const ids = new Set<string>();
+
+    if (orgId) {
+      const managers = await this.prisma.organizationUser.findMany({
+        where: { organization_id: orgId, role: { in: ['admin', 'manager'] } },
+        select: { user_id: true },
+      });
+      managers.forEach((m) => ids.add(m.user_id));
+    }
+
+    const adminEmails = (this.config.get<string>('ADMIN_EMAILS') ?? '')
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+    if (adminEmails.length > 0) {
+      const admins = await this.prisma.user.findMany({
+        where: { email: { in: adminEmails } },
+        select: { id: true },
+      });
+      admins.forEach((a) => ids.add(a.id));
+    }
+
+    return [...ids];
+  }
+
+  /**
+   * Trả về true nếu được phép bắn cảnh báo (chưa trong cooldown) và đồng thời
+   * đặt cooldown. Dùng Redis (đúng trên nhiều instance), fallback in-memory.
+   */
+  private async acquireAlertSlot(key: string): Promise<boolean> {
+    const fullKey = `airweave:alert:${key}`;
+    const ttl = NotificationsService.COOLDOWN_MS;
+
+    if (this.redis) {
+      try {
+        const got = await this.redis.set(fullKey, '1', 'PX', ttl, 'NX');
+        return got === 'OK';
+      } catch {
+        // rơi xuống fallback in-memory
+      }
+    }
+
+    const now = Date.now();
+    const last = this.localCooldown.get(fullKey) ?? 0;
+    if (now - last < ttl) return false;
+    this.localCooldown.set(fullKey, now);
+    return true;
   }
 }
-

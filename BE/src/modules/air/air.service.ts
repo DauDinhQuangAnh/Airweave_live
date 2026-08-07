@@ -1,7 +1,7 @@
 import { Injectable, ServiceUnavailableException, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { RedisTtlCache, fetchJson, distanceKm } from '../../common/cache.util';
-import { calculateAqiFromPm25, applyHumidityCorrection, calculateNowCast } from '../../common/air-analytics.util';
+import { calculateAqiFromPm25 } from '../../common/air-analytics.util';
 import { REDIS_CLIENT } from '../../common/redis.module';
 import { GeoPointDto, BoundsDto, HistoryQueryDto } from './dto/air.dto';
 import type Redis from 'ioredis';
@@ -143,11 +143,18 @@ export class AirService {
         ).catch(() => null),
       ]);
 
+      // Chỉ dùng dữ liệu WAQI khi trạm còn hợp lệ & đủ gần (available=true);
+      // ngược lại rơi về Open-Meteo. Thiếu biến này chính là lỗi crash trước đây.
+      const usable = waqi?.available === true;
+
       const cw = weather?.current ?? {};
       const ca = air?.current ?? {};
       const humidity = Math.round(cw.relative_humidity_2m ?? 0);
-      const rawPm25 = usable ? (waqi.pm25 ?? ca.pm2_5 ?? 0) : (ca.pm2_5 ?? 0);
-      const pm25 = applyHumidityCorrection(rawPm25, humidity);
+      // WAQI (trạm quan trắc) và Open-Meteo (mô hình CAMS) đều là dữ liệu tham chiếu
+      // đã hiệu chỉnh sẵn — KHÔNG áp hygroscopic correction lần nữa, nếu không sẽ hạ
+      // thấp sai giá trị PM2.5 khi độ ẩm cao (rất thường gặp ở khí hậu VN).
+      // Hiệu chỉnh này chỉ dành cho cảm biến laser thô của IoT node (xem nodes.service).
+      const pm25 = usable ? (waqi.pm25 ?? ca.pm2_5 ?? 0) : (ca.pm2_5 ?? 0);
       const pm10 = usable ? (waqi.pm10 ?? ca.pm10 ?? 0) : (ca.pm10 ?? 0);
 
       return {
@@ -214,7 +221,7 @@ export class AirService {
           date,
           pm25_avg: Math.round(avg * 10) / 10,
           pm25_max: Math.round(Math.max(...values) * 10) / 10,
-          aqi_avg: pm25ToAqi(avg),
+          aqi_avg: calculateAqiFromPm25(avg),
         };
       });
 

@@ -33,13 +33,18 @@ const PM25_BREAKPOINTS: Breakpoint[] = [
  * I = ((I_high - I_low) / (C_high - C_low)) * (C - C_low) + I_low
  */
 export function calculateAqiFromPm25(pm25: number): number {
-  if (pm25 < 0) return 0;
-  if (pm25 > 500.4) return 500;
+  if (pm25 <= 0) return 0;
 
-  const bp = PM25_BREAKPOINTS.find((b) => pm25 >= b.cLow && pm25 <= b.cHigh);
-  if (!bp) return Math.round(pm25);
+  // US EPA quy định: truncate nồng độ PM2.5 về 0.1 µg/m³ TRƯỚC khi tra bảng.
+  // Nhờ vậy các giá trị rơi vào khe hở giữa 2 breakpoint (vd 12.05) được quy về
+  // đúng bậc dưới, loại bỏ hoàn toàn edge-case gap của bảng breakpoint.
+  const c = Math.floor(pm25 * 10) / 10;
+  if (c > 500.4) return 500;
 
-  const aqi = ((bp.iHigh - bp.iLow) / (bp.cHigh - bp.cLow)) * (pm25 - bp.cLow) + bp.iLow;
+  const bp = PM25_BREAKPOINTS.find((b) => c >= b.cLow && c <= b.cHigh);
+  if (!bp) return 500; // an toàn: vượt ngưỡng cao nhất
+
+  const aqi = ((bp.iHigh - bp.iLow) / (bp.cHigh - bp.cLow)) * (c - bp.cLow) + bp.iLow;
   return Math.round(aqi);
 }
 

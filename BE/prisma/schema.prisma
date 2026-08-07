@@ -33,6 +33,7 @@ model User {
   sos_events        SosEvent[]
   community_reports CommunityReport[]
   refresh_tokens    RefreshToken[]
+  organization_users OrganizationUser[]
 
   @@map("users")
 }

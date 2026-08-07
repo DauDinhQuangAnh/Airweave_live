@@ -3,6 +3,7 @@ import type Redis from 'ioredis';
 /** Cache TTL trong bộ nhớ — giảm số lần gọi API ngoài (WAQI/Open-Meteo có giới hạn rate). */
 export class TtlCache<T> {
   private readonly store = new Map<string, { value: T; expiresAt: number }>();
+  private readonly inFlight = new Map<string, Promise<T>>();
 
   constructor(private readonly ttlMs: number, private readonly maxEntries = 500) {}
 
@@ -28,9 +29,23 @@ export class TtlCache<T> {
   async wrap(key: string, factory: () => Promise<T>): Promise<T> {
     const cached = this.get(key);
     if (cached !== undefined) return cached;
-    const value = await factory();
-    this.set(key, value);
-    return value;
+
+    // Single-flight: nhiều lời gọi cùng key khi cache miss chỉ chạy factory MỘT lần
+    // (tránh cache stampede làm gọi API ngoài trùng lặp).
+    const existing = this.inFlight.get(key);
+    if (existing) return existing;
+
+    const p = (async () => {
+      try {
+        const value = await factory();
+        this.set(key, value);
+        return value;
+      } finally {
+        this.inFlight.delete(key);
+      }
+    })();
+    this.inFlight.set(key, p);
+    return p;
   }
 }
 
@@ -41,6 +56,7 @@ export class TtlCache<T> {
  */
 export class RedisTtlCache<T> {
   private readonly fallback: TtlCache<T>;
+  private readonly inFlight = new Map<string, Promise<T>>();
 
   constructor(
     private readonly redis: Redis | null,
@@ -81,9 +97,22 @@ export class RedisTtlCache<T> {
   async wrap(key: string, factory: () => Promise<T>): Promise<T> {
     const cached = await this.get(key);
     if (cached !== undefined) return cached;
-    const value = await factory();
-    await this.set(key, value);
-    return value;
+
+    // Single-flight per-instance: gộp các miss đồng thời cùng key vào 1 lần gọi factory.
+    const existing = this.inFlight.get(key);
+    if (existing) return existing;
+
+    const p = (async () => {
+      try {
+        const value = await factory();
+        await this.set(key, value);
+        return value;
+      } finally {
+        this.inFlight.delete(key);
+      }
+    })();
+    this.inFlight.set(key, p);
+    return p;
   }
 }
 
@@ -118,21 +147,5 @@ export function distanceKm(lat1: number, lng1: number, lat2: number, lng2: numbe
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-/** Quy đổi PM2.5 (µg/m³) sang chỉ số AQI theo thang US EPA. */
-export function pm25ToAqi(pm25: number): number {
-  const breakpoints: [number, number, number, number][] = [
-    [0, 12, 0, 50],
-    [12.1, 35.4, 51, 100],
-    [35.5, 55.4, 101, 150],
-    [55.5, 150.4, 151, 200],
-    [150.5, 250.4, 201, 300],
-    [250.5, 350.4, 301, 400],
-    [350.5, 500.4, 401, 500],
-  ];
-  for (const [cLow, cHigh, iLow, iHigh] of breakpoints) {
-    if (pm25 >= cLow && pm25 <= cHigh) {
-      return Math.round(((iHigh - iLow) / (cHigh - cLow)) * (pm25 - cLow) + iLow);
-    }
-  }
-  return pm25 > 500.4 ? 500 : 0;
-}
+// Quy đổi PM2.5 → AQI đã gộp về một nguồn duy nhất: calculateAqiFromPm25()
+// trong air-analytics.util.ts (tránh trùng lặp & lệch kết quả ở khe hở breakpoint).

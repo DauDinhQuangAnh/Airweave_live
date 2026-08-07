@@ -119,8 +119,12 @@ export class AuthService {
       },
     });
 
-    const profile = await this.prisma.profile.findUnique({ where: { user_id: userId } });
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    // Một truy vấn duy nhất lấy cả user + profile (thay vì 2 lần findUnique tuần tự).
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { profile: true },
+    });
+    const profile = user?.profile;
 
     return {
       access_token,
@@ -235,11 +239,33 @@ export class AuthService {
     const stored = await this.prisma.refreshToken.findUnique({
       where: { token_hash: this.hashToken(refreshToken) },
     });
-    if (!stored || stored.revoked_at || stored.expires_at < new Date()) {
-      throw new UnauthorizedException('Refresh token đã bị thu hồi hoặc hết hạn');
+
+    if (!stored) {
+      throw new UnauthorizedException('Refresh token không hợp lệ');
     }
 
-    // Xoay vòng token: thu hồi token cũ, cấp cặp mới
+    // ⚠️ Phát hiện tái sử dụng (reuse detection): token này ĐÃ bị xoay vòng/thu hồi
+    // nhưng lại được dùng để refresh — dấu hiệu điển hình của token bị đánh cắp.
+    // Phản ứng: thu hồi TOÀN BỘ phiên còn hoạt động của user (huỷ cả token family),
+    // buộc cả kẻ tấn công lẫn người dùng thật phải đăng nhập lại.
+    if (stored.revoked_at) {
+      this.logger.warn(
+        `Phát hiện tái sử dụng refresh token của user ${stored.user_id} — thu hồi mọi phiên`,
+      );
+      await this.prisma.refreshToken.updateMany({
+        where: { user_id: stored.user_id, revoked_at: null },
+        data: { revoked_at: new Date() },
+      });
+      throw new UnauthorizedException(
+        'Phát hiện tái sử dụng refresh token — mọi phiên đã bị thu hồi, vui lòng đăng nhập lại',
+      );
+    }
+
+    if (stored.expires_at < new Date()) {
+      throw new UnauthorizedException('Refresh token đã hết hạn');
+    }
+
+    // Xoay vòng token: thu hồi token hiện tại, cấp cặp mới
     await this.prisma.refreshToken.update({
       where: { id: stored.id },
       data: { revoked_at: new Date() },

@@ -49,7 +49,10 @@
   - **Hampel Outlier Rejection Filter**: Bộ lọc nhiễu đỉnh ngắt quãng dùng trung vị tuyệt đối MAD (Median Absolute Deviation) để loại bỏ các đỉnh sai số bất ngờ từ phần cứng.
   - **Adaptive Exponential Moving Average (EMA)**: Thuật toán làm mượt thích ứng nhiễu sóng tần số cao của cảm biến phần cứng trước khi ghi vào cơ sở dữ liệu.
 
-- **Hoàn thiện Chức năng Người dùng & Phân quyền Auth Gateway (`/flutter`)**:
+- **Tối ưu hóa Quyết định Phần cứng (Chỉ đọc Status ONLINE/OFFLINE)**:
+  - Lược bỏ hoàn toàn nút bấm / công tắc Relay bật mở nguồn phần cứng để tối ưu chi phí linh kiện BOM và tránh rủi ro chập cháy Relay ngoài thực địa.
+  - **Trạng thái Node (`status`)**: Thuần túy là dạng **Read-Only**: `🟢 ONLINE` (Đang hoạt động gửi dữ liệu) và `🔴 OFFLINE` (Mất kết nối / Mất điện).
+
   - **Tài khoản `admin`/`admin` Gateway**: Đăng nhập tài khoản/mật khẩu `admin`/`admin` mở ngay lập tức **Admin IoT Portal** (xem mã Chip, Pin %, RSSI, Zero-Touch MQTT Auto-Discover). Đăng nhập thường mở giao diện **Người dùng (End-User)**.
   - **Báo cáo Ô nhiễm Cộng đồng** ([report_incident_dialog.dart](file:///d:/hoctap/AIR/airweave_real/Airweave_live/flutter/lib/widgets/report_incident_dialog.dart)): Dialog báo cáo đốt rác, khói bụi công trình kèm vị trí GPS thời gian thực.
   - **Khuyến cáo Sức khỏe Cá nhân hóa** ([health_guidance_card.dart](file:///d:/hoctap/AIR/airweave_real/Airweave_live/flutter/lib/widgets/health_guidance_card.dart)): Lời khuyên sức khỏe cho nhóm nhạy cảm (Hen suyễn, Trẻ nhỏ, Mẹ bầu, Người già).

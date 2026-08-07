@@ -1,8 +1,13 @@
-# AirWeave IoT Node — Hardware & Firmware Specification (Tài liệu Thiết kế Phần cứng)
-
 > **Tài liệu Kỹ thuật Chuẩn hóa**: Mô hình thiết kế 2 phiên bản IoT Node cảm biến đo chất lượng không khí dành cho dự án AirWeave.
+> 
+> ⚡ **Quyết định Thiết kế Phần cứng (Hardware Architecture Decision)**:
+> - **KHÔNG sử dụng Module Relay công tắc Tắt/Mở phần cứng**: Để tối ưu chi phí linh kiện BOM, giảm nguy cơ cháy nổ mạch relay và đảm bảo thiết bị hoạt động thu thập dữ liệu đo đạc liên tục.
+> - **Trạng thái Node (Status)**: Hoàn toàn là dạng **Chỉ Đọc (Read-Only Status)**:
+>   - `🟢 ONLINE` (Đang hoạt động): Node phát nhịp tim (heartbeat/telemetry) liên tục về hệ thống.
+>   - `🔴 OFFLINE` (Ngừng hoạt động / Mất kết nối): Node không gửi dữ liệu quá 5 phút (do mất điện/mất Wi-Fi).
 
 ---
+
 
 ## 📌 1. TỔNG QUAN 2 PHIÊN BẢN NODE (HARDWARE EDITIONS)
 

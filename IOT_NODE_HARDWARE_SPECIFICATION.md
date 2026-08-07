@@ -41,25 +41,26 @@ AirWeave hỗ trợ 2 phiên bản IoT Node phần cứng chuyên biệt cho t�
 ### A. Phiên bản 1: Outdoor Solar Edition (Bên ngoài trường / Đường phố)
 | STT | Linh kiện | Model khuyên dùng | Chuẩn kết nối | Chức năng | Chi phí ước tính |
 |---|---|---|---|---|---|
-| 1 | Vi điều khiển | ESP32-WROOM-32D | Wi-Fi / Bluetooth | Xử lý logic, Deep Sleep, MQTT | ~70.000 VNĐ |
-| 2 | Cảm biến Bụi mịn | Plantower PMS7003 | UART (GPIO16/17) | Đo PM1.0, PM2.5, PM10 bằng laser | ~350.000 VNĐ |
-| 3 | Cảm biến Nhiệt Ẩm | Sensirion SHT30 | I2C (GPIO21/22) | Đo Nhiệt/Ẩm %, Bù ẩm PM2.5 | ~50.000 VNĐ |
-| 4 | Cảm biến Tia UV | Lite-On LTR-390 | I2C (GPIO21/22) | Đo chỉ số Tia cực tím (UV Index) | ~75.000 VNĐ |
+| 1 | Vi điều khiển | ESP32-S3 (Anten mở rộng IPEX/SMA) | Wi-Fi / Bluetooth | Xử lý logic, Deep Sleep, Anten râu thu sóng xa | ~110.000 VNĐ |
+| 2 | Cảm biến Bụi Laser | Winsen ZH03B Laser | UART (GPIO16/17) | Đo PM1.0, PM2.5, PM10 bằng laser chính xác | ~280.000 VNĐ |
+| 3 | Cảm biến Nhiệt Ẩm | Sensirion SHT30 | I2C (GPIO21/22) | Đo Nhiệt/Ẩm %, Bù sấy nồm ẩm | ~50.000 VNĐ |
+| 4 | Cảm biến Tia UV | UVM-30A (Op-Amp) | Analog (GPIO34) | Đo cường độ & chỉ số Tia cực tím (UV Index) | ~199.000 VNĐ |
 | 5 | Tấm pin Mặt trời | Solar Panel 5V - 6W | Khối nguồn | Cấp điện ban ngày | ~90.000 VNĐ |
 | 6 | Mạch sạc & Pin | Mạch TP4056 + 2x Pin 18650 | Khối nguồn | Tích điện 5200mAh (Dùng đêm/mưa) | ~110.000 VNĐ |
 | 7 | Vỏ hộp ngoài trời | Vỏ ABS chống nước IP65 | Khung vỏ | Chống mưa nắng ngoài trời | ~35.000 VNĐ |
-| **TỔNG** | | | | **Đo Bụi + Nhiệt Ẩm + UV (Pin Solar)** | **~780.000 VNĐ** |
+| **TỔNG** | | | | **Đo Bụi ZH03B + SHT30 + UVM-30A (Pin Solar)** | **~874.000 VNĐ** |
 
 ### B. Phiên bản 2: Indoor / Campus Grid Edition (Trong phòng học / Văn phòng / Sảnh)
 | STT | Linh kiện | Model khuyên dùng | Chuẩn kết nối | Chức năng | Chi phí ước tính |
 |---|---|---|---|---|---|
-| 1 | Vi điều khiển | ESP32-WROOM-32D | Wi-Fi / Bluetooth | Xử lý logic 24/7, Realtime MQTT | ~70.000 VNĐ |
-| 2 | Cảm biến Bụi mịn | Plantower PMS7003 | UART2 (GPIO16/17) | Đo PM1.0, PM2.5, PM10 | ~350.000 VNĐ |
-| 3 | Cảm biến Nhiệt Ẩm | Sensirion SHT30 | I2C (GPIO21/22) | Đo Nhiệt độ & Độ ẩm % | ~50.000 VNĐ |
-| 4 | Cảm biến Khí CO2 | Winsen MH-Z19C | UART1 (GPIO4/5) | Đo nồng độ CO2 (ppm) phòng học | ~180.000 VNĐ |
-| 5 | Cảm biến Khí độc | Sensirion SGP40 | I2C (GPIO21/22) | Chỉ số khí độc VOC Index (0-500) | ~120.000 VNĐ |
-| 6 | Nguồn Adapter | Adapter 5V / 2A Type-C | Nguồn điện lưới | Cấp điện 220V liên tục 24/7 | ~40.000 VNĐ |
-| **TỔNG** | | | | **Đo Bụi + Nhiệt Ẩm + CO2 + VOCs (Điện 220V)** | **~810.000 VNĐ** |
+| 1 | Vi điều khiển | ESP32-S3 (Anten mở rộng IPEX/SMA) | Wi-Fi / Bluetooth | Xử lý logic 24/7, Anten xuyên tường cực khỏe | ~110.000 VNĐ |
+| 2 | Cảm biến Bụi Laser | Winsen ZH03B Laser | UART2 (GPIO16/17) | Đo PM1.0, PM2.5, PM10 phòng học | ~280.000 VNĐ |
+| 3 | Cảm biến Nhiệt Ẩm | Sensirion SHT30 | I2C (GPIO21/22) | Đo Nhiệt độ & Độ ẩm % phòng học | ~50.000 VNĐ |
+| 4 | Cảm biến UV | UVM-30A | Analog (GPIO34) | Đo chỉ số UV môi trường | ~199.000 VNĐ |
+| 5 | Cảm biến Khí Điện hóa | Winsen ZE12A | UART1 (GPIO4/5) | Đo khí điện hóa đa chỉ số (CO/NO2/SO2/O3) | ~320.000 VNĐ |
+| 6 | Nguồn Adapter | Adapter 5V / 2A Type-C | Nguồn điện lưới | Cấp điện 220V liên tục 24/7 qua cổng Type-C | ~40.000 VNĐ |
+| **TỔNG** | | | | **Đo Bụi ZH03B + SHT30 + UVM-30A + ZE12A (Nguồn Type-C)** | **~999.000 VNĐ** |
+
 
 ---
 

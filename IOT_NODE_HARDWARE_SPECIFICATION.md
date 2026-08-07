@@ -46,9 +46,9 @@ AirWeave hỗ trợ 2 phiên bản IoT Node phần cứng chuyên biệt cho t�
 | 3 | **Cảm biến Nhiệt Ẩm** | Sensirion SHT30 | I2C (GPIO21/22) | Đo Nhiệt/Ẩm %, Bù sấy nồm ẩm | **65.000 VNĐ** | [ICDayroi.com](https://icdayroi.com) |
 | 4 | **Cảm biến Tia UV** | UV UVM-30A (Op-Amp) | Analog (GPIO34) | Đo cường độ & chỉ số Tia cực tím (UV Index) | **199.000 VNĐ** | [ICDayroi.com](https://icdayroi.com) |
 | 5 | **Tấm pin Mặt trời** | Solar Panel 5V - 6W | Khối nguồn | Cấp điện ban ngày | **90.000 VNĐ** | [ICDayroi.com](https://icdayroi.com) |
-| 6 | **Mạch sạc & Pin** | Mạch TP4056 + 2x Pin 18650 | Khối nguồn | Tích điện 5200mAh (Dùng đêm/mưa) | **110.000 VNĐ** | [NShopvn.com](https://nshopvn.com) |
-| 7 | **Vỏ hộp ngoài trời** | Vỏ ABS chống nước IP65 | Khung vỏ | Chống mưa nắng ngoài trời | **35.000 VNĐ** | [HShop.vn](https://hshop.vn) |
-| **TỔNG** | | | | **Đo Bụi ZH03B + SHT30 + UVM-30A (Pin Solar)** | **~889.000 VNĐ** | *Trọn bộ linh kiện* |
+| 6 | **Mạch sạc & Pin** | TP4056 + 2x Pin 18650 | Khối nguồn | Tích điện 5200mAh (Dùng đêm/mưa) | **110.000 VNĐ** | [NShopvn.com](https://nshopvn.com) |
+| 7 | **Vỏ hộp ngoài trời** | Hộp nhựa DIY tự chế | Khung vỏ | Tự làm thủ công (DIY) | **0 VNĐ (Tự chế)** | *Tự đóng vỏ* |
+| **TỔNG** | | | | **Đo Bụi ZH03B + SHT30 + UVM-30A (Pin Solar)** | **~854.000 VNĐ** | *Trọn bộ linh kiện Solar* |
 
 ### B. Phiên bản 2: Indoor / Campus Grid Edition (Trong phòng học / Văn phòng / Sảnh)
 | STT | Linh kiện | Model khuyên dùng | Chuẩn kết nối | Chức năng | Chi phí (Tham khảo) | Nguồn tham khảo |

@@ -39,27 +39,28 @@ AirWeave hỗ trợ 2 phiên bản IoT Node phần cứng chuyên biệt cho t�
 ## 📊 2. BẢNG CHI TIẾT CẢM BIẾN & LINH KIỆN (BOM)
 
 ### A. Phiên bản 1: Outdoor Solar Edition (Bên ngoài trường / Đường phố)
-| STT | Linh kiện | Model khuyên dùng | Chuẩn kết nối | Chức năng | Chi phí ước tính |
-|---|---|---|---|---|---|
-| 1 | Vi điều khiển | ESP32-S3 (Anten mở rộng IPEX/SMA) | Wi-Fi / Bluetooth | Xử lý logic, Deep Sleep, Anten râu thu sóng xa | ~110.000 VNĐ |
-| 2 | Cảm biến Bụi Laser | Winsen ZH03B Laser | UART (GPIO16/17) | Đo PM1.0, PM2.5, PM10 bằng laser chính xác | ~280.000 VNĐ |
-| 3 | Cảm biến Nhiệt Ẩm | Sensirion SHT30 | I2C (GPIO21/22) | Đo Nhiệt/Ẩm %, Bù sấy nồm ẩm | ~50.000 VNĐ |
-| 4 | Cảm biến Tia UV | UVM-30A (Op-Amp) | Analog (GPIO34) | Đo cường độ & chỉ số Tia cực tím (UV Index) | ~199.000 VNĐ |
-| 5 | Tấm pin Mặt trời | Solar Panel 5V - 6W | Khối nguồn | Cấp điện ban ngày | ~90.000 VNĐ |
-| 6 | Mạch sạc & Pin | Mạch TP4056 + 2x Pin 18650 | Khối nguồn | Tích điện 5200mAh (Dùng đêm/mưa) | ~110.000 VNĐ |
-| 7 | Vỏ hộp ngoài trời | Vỏ ABS chống nước IP65 | Khung vỏ | Chống mưa nắng ngoài trời | ~35.000 VNĐ |
-| **TỔNG** | | | | **Đo Bụi ZH03B + SHT30 + UVM-30A (Pin Solar)** | **~874.000 VNĐ** |
+| STT | Linh kiện | Model khuyên dùng | Chuẩn kết nối | Chức năng | Chi phí (Tham khảo) | Nguồn tham khảo |
+|---|---|---|---|---|---|---|
+| 1 | **Vi điều khiển** | ESP32-S3 (Anten mở rộng IPEX/SMA) | Wi-Fi / Bluetooth | Xử lý logic, Deep Sleep, Anten râu thu sóng xa | **110.000 VNĐ** | [NShopvn.com](https://nshopvn.com) |
+| 2 | **Cảm biến Bụi Laser** | Winsen ZH03B Laser | UART (GPIO16/17) | Đo PM1.0, PM2.5, PM10 bằng laser chính xác | **280.000 VNĐ** | [Chotroihn.vn](https://chotroihn.vn) |
+| 3 | **Cảm biến Nhiệt Ẩm** | Sensirion SHT30 | I2C (GPIO21/22) | Đo Nhiệt/Ẩm %, Bù sấy nồm ẩm | **65.000 VNĐ** | [ICDayroi.com](https://icdayroi.com) |
+| 4 | **Cảm biến Tia UV** | UV UVM-30A (Op-Amp) | Analog (GPIO34) | Đo cường độ & chỉ số Tia cực tím (UV Index) | **199.000 VNĐ** | [ICDayroi.com](https://icdayroi.com) |
+| 5 | **Tấm pin Mặt trời** | Solar Panel 5V - 6W | Khối nguồn | Cấp điện ban ngày | **90.000 VNĐ** | [ICDayroi.com](https://icdayroi.com) |
+| 6 | **Mạch sạc & Pin** | Mạch TP4056 + 2x Pin 18650 | Khối nguồn | Tích điện 5200mAh (Dùng đêm/mưa) | **110.000 VNĐ** | [NShopvn.com](https://nshopvn.com) |
+| 7 | **Vỏ hộp ngoài trời** | Vỏ ABS chống nước IP65 | Khung vỏ | Chống mưa nắng ngoài trời | **35.000 VNĐ** | [HShop.vn](https://hshop.vn) |
+| **TỔNG** | | | | **Đo Bụi ZH03B + SHT30 + UVM-30A (Pin Solar)** | **~889.000 VNĐ** | *Trọn bộ linh kiện* |
 
 ### B. Phiên bản 2: Indoor / Campus Grid Edition (Trong phòng học / Văn phòng / Sảnh)
-| STT | Linh kiện | Model khuyên dùng | Chuẩn kết nối | Chức năng | Chi phí ước tính |
-|---|---|---|---|---|---|
-| 1 | Vi điều khiển | ESP32-S3 (Anten mở rộng IPEX/SMA) | Wi-Fi / Bluetooth | Xử lý logic 24/7, Anten xuyên tường cực khỏe | ~110.000 VNĐ |
-| 2 | Cảm biến Bụi Laser | Winsen ZH03B Laser | UART2 (GPIO16/17) | Đo PM1.0, PM2.5, PM10 phòng học | ~280.000 VNĐ |
-| 3 | Cảm biến Nhiệt Ẩm | Sensirion SHT30 | I2C (GPIO21/22) | Đo Nhiệt độ & Độ ẩm % phòng học | ~50.000 VNĐ |
-| 4 | Cảm biến UV | UVM-30A | Analog (GPIO34) | Đo chỉ số UV môi trường | ~199.000 VNĐ |
-| 5 | Cảm biến Khí Điện hóa | Winsen ZE12A | UART1 (GPIO4/5) | Đo khí điện hóa đa chỉ số (CO/NO2/SO2/O3) | ~320.000 VNĐ |
-| 6 | Nguồn Adapter | Adapter 5V / 2A Type-C | Nguồn điện lưới | Cấp điện 220V liên tục 24/7 qua cổng Type-C | ~40.000 VNĐ |
-| **TỔNG** | | | | **Đo Bụi ZH03B + SHT30 + UVM-30A + ZE12A (Nguồn Type-C)** | **~999.000 VNĐ** |
+| STT | Linh kiện | Model khuyên dùng | Chuẩn kết nối | Chức năng | Chi phí (Tham khảo) | Nguồn tham khảo |
+|---|---|---|---|---|---|---|
+| 1 | **Vi điều khiển** | ESP32-S3 (Anten mở rộng IPEX/SMA) | Wi-Fi / Bluetooth | Xử lý logic 24/7, Anten xuyên tường cực khỏe | **110.000 VNĐ** | [NShopvn.com](https://nshopvn.com) |
+| 2 | **Cảm biến Bụi Laser** | Winsen ZH03B Laser | UART2 (GPIO16/17) | Đo PM1.0, PM2.5, PM10 phòng học | **280.000 VNĐ** | [Chotroihn.vn](https://chotroihn.vn) |
+| 3 | **Cảm biến Nhiệt Ẩm** | Sensirion SHT30 | I2C (GPIO21/22) | Đo Nhiệt độ & Độ ẩm % phòng học | **65.000 VNĐ** | [ICDayroi.com](https://icdayroi.com) |
+| 4 | **Cảm biến UV** | UV UVM-30A | Analog (GPIO34) | Đo chỉ số UV môi trường | **199.000 VNĐ** | [ICDayroi.com](https://icdayroi.com) |
+| 5 | **Cảm biến Khí Điện hóa** | Winsen ZE12A | UART1 (GPIO4/5) | Đo khí điện hóa đa chỉ số (CO/NO2/SO2/O3) | **320.000 VNĐ** | [Chotroihn.vn](https://chotroihn.vn) |
+| 6 | **Nguồn Adapter** | Adapter 5V / 2A Type-C | Nguồn điện lưới | Cấp điện 220V liên tục 24/7 qua cổng Type-C | **40.000 VNĐ** | [ICDayroi.com](https://icdayroi.com) |
+| **TỔNG** | | | | **Đo Bụi ZH03B + SHT30 + UVM-30A + ZE12A (Nguồn Type-C)** | **~1.014.000 VNĐ** | *Trọn bộ linh kiện* |
+
 
 > 📌 **Ghi chú về Cảm biến $CO_2$ (Carbon Dioxide)**:
 > - **Cảm biến MQ-5**: KHÔNG đo được $CO_2$ (MQ-5 là cảm biến bán dẫn chuyên đo khí Gas LPG, Methane $CH_4$, Khí đun nấu).

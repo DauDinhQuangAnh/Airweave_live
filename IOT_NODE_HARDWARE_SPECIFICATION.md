@@ -61,8 +61,12 @@ AirWeave hỗ trợ 2 phiên bản IoT Node phần cứng chuyên biệt cho t�
 | 6 | Nguồn Adapter | Adapter 5V / 2A Type-C | Nguồn điện lưới | Cấp điện 220V liên tục 24/7 qua cổng Type-C | ~40.000 VNĐ |
 | **TỔNG** | | | | **Đo Bụi ZH03B + SHT30 + UVM-30A + ZE12A (Nguồn Type-C)** | **~999.000 VNĐ** |
 
+> 📌 **Ghi chú về Cảm biến $CO_2$ (Carbon Dioxide)**:
+> - **Cảm biến MQ-5**: KHÔNG đo được $CO_2$ (MQ-5 là cảm biến bán dẫn chuyên đo khí Gas LPG, Methane $CH_4$, Khí đun nấu).
+> - **Kế hoạch triển khai $CO_2$**: Cảm biến $CO_2$ chuyên dụng dạng quang phổ NDIR (**Winsen MH-Z19C** hoặc **Sensirion SCD40**) sẽ được thiết kế thành mô-đun đo riêng biệt và **triển khai tích hợp ở bước tiếp theo (Hardware Expansion Phase 2)**.
 
 ---
+
 
 ## ⚡ 3. SƠ ĐỒ MẠCH ĐIỆN TỔNG HỢP (PINOUT CONNECTIONS)
 

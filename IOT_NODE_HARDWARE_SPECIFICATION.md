@@ -46,9 +46,10 @@ AirWeave hỗ trợ 2 phiên bản IoT Node phần cứng chuyên biệt cho t�
 | 3 | **Cảm biến Nhiệt Ẩm** | Sensirion SHT30 | I2C (GPIO21/22) | Đo Nhiệt/Ẩm %, Bù sấy nồm ẩm | *Mạch SHT30-D vỏ bọc* |
 | 4 | **Cảm biến Tia UV** | UV UVM-30A (Op-Amp) | Analog (GPIO34) | Đo cường độ & chỉ số Tia cực tím (UV Index) | *Mạch khuếch đại tín hiệu UV* |
 | 5 | **Cảm biến Khí Điện hóa** | Winsen ZE12A | UART1 (GPIO4/5) | Đo khí điện hóa đa chỉ số (CO/NO2/SO2/O3) | *Module điện hóa 4 chỉ số* |
-| 6 | **Tấm pin Mặt trời** | Solar Panel 5V - 6W | Khối nguồn | Cấp điện ban ngày ngoài trời | *Pin Solar khung nhôm ngoài trời* |
-| 7 | **Mạch sạc & Pin** | TP4056 + 2x Pin 18650 | Khối nguồn | Tích điện 5200mAh (Dùng đêm/mưa) | *Khối pin dung lượng cao* |
-| 8 | **Vỏ hộp bảo vệ** | Vỏ đúc ABS IP67 ngoài trời | Khung vỏ | Khung vỏ bảo vệ chuyên dụng ngoài trời | *Vỏ bọc chuyên dụng* |
+| 6 | **Module Truyền dữ liệu di động** | SIM 4G LTE / NB-IoT (SIM7080G / A7670C) hoặc LoRa SX1276 | UART3 / SPI / SIM Slot | Truyền gói tin telemetry di động 4G về Server khi lắp đặt ngoài đường phố/công viên không có Wi-Fi | *Bắt buộc khi đặt ngoài tầm phủ Wi-Fi* |
+| 7 | **Tấm pin Mặt trời** | Solar Panel 5V - 6W | Khối nguồn | Cấp điện ban ngày ngoài trời | *Pin Solar khung nhôm ngoài trời* |
+| 8 | **Mạch sạc & Pin** | TP4056 + 2x Pin 18650 | Khối nguồn | Tích điện 5200mAh (Dùng đêm/mưa) | *Khối pin dung lượng cao* |
+| 9 | **Vỏ hộp bảo vệ** | Vỏ đúc ABS IP67 ngoài trời | Khung vỏ | Khung vỏ bảo vệ chuyên dụng ngoài trời | *Vỏ bọc chuyên dụng* |
 | **BỘ THIẾT BỊ** | | | | **Đo Bụi ZH03B + SHT30 + UVM-30A + ZE12A (Pin Solar)** | *Trọn bộ thiết bị Outdoor Solar* |
 
 ### B. Phiên bản 2: Indoor / Campus Grid Edition (Trong phòng học / Văn phòng / Sảnh)

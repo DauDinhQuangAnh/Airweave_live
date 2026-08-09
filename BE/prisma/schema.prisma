@@ -308,7 +308,7 @@ model IotTelemetry {
 
 
 
-  @@index([node_id, recorded_at DESC])
+  @@index([node_id, recorded_at(sort: Desc)])
   @@map("iot_telemetry")
 }
 

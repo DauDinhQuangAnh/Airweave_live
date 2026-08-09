@@ -37,24 +37,18 @@ const Premium = lazy(() => import("./pages/Premium.tsx"));
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      /**
-       * Dữ liệu cũ được coi là "fresh" trong 2 phút — không re-fetch khi chuyển tab,
-       * mount component lần 2, hoặc window focus. Giảm ~60-70% HTTP request thừa.
-       * Các query cần realtime hơn sẽ override staleTime = 0 tại chỗ dùng.
-       */
-      staleTime: 2 * 60 * 1000,      // 2 phút
-      gcTime: 10 * 60 * 1000,        // giữ cache 10 phút sau khi không có subscriber
-      retry: 2,                       // retry 2 lần khi lỗi network
-      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10000), // exponential backoff
-      refetchOnWindowFocus: false,    // không fetch lại khi focus window
-      refetchOnReconnect: true,       // fetch lại khi reconnect mạng
+      staleTime: 2 * 60 * 1000,
+      gcTime: 10 * 60 * 1000,
+      retry: 2,
+      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10000),
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: true,
     },
     mutations: {
       retry: 1,
     },
   },
 });
-
 
 const PageFallback = () => (
   <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-background text-foreground">
@@ -70,6 +64,8 @@ const AdminLayout = lazy(() => import("./components/admin/AdminLayout.tsx"));
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard.tsx"));
 const AdminNodesManager = lazy(() => import("./pages/admin/AdminNodesManager.tsx"));
 const AdminOrgsManager = lazy(() => import("./pages/admin/AdminOrgsManager.tsx"));
+const AdminAlertsManager = lazy(() => import("./pages/admin/AdminAlertsManager.tsx"));
+const AdminApiKeysManager = lazy(() => import("./pages/admin/AdminApiKeysManager.tsx"));
 const OrgDashboard = lazy(() => import("./pages/OrgDashboard.tsx"));
 
 const App = () => (
@@ -95,6 +91,8 @@ const App = () => (
                 <Route index element={<AdminDashboard />} />
                 <Route path="nodes" element={<AdminNodesManager />} />
                 <Route path="orgs" element={<AdminOrgsManager />} />
+                <Route path="alerts" element={<AdminAlertsManager />} />
+                <Route path="api-keys" element={<AdminApiKeysManager />} />
               </Route>
 
               {/* Protected app routes with sidebar */}
@@ -103,8 +101,11 @@ const App = () => (
                 <Route path="/map" element={<AirMap />} />
                 <Route path="/smart-route" element={<SmartRoute />} />
                 <Route path="/sos" element={<SOS />} />
-                <Route path="/air-twin" element={<Navigate to="/sos" replace />} />
-                <Route path="/profile" element={<Profile2 />} />
+                <Route path="/health-profile" element={<HealthProfile />} />
+                <Route path="/medical-id" element={<MedicalID />} />
+                <Route path="/exposure-history" element={<ExposureHistory />} />
+                <Route path="/profile" element={<Profile />} />
+                <Route path="/profile-settings" element={<Profile2 />} />
                 <Route path="/data-transparency" element={<DataTransparency />} />
                 <Route path="/behavior-insights" element={<BehaviorInsights />} />
                 <Route path="/civic-hotspots" element={<CivicHotspots />} />
@@ -112,11 +113,7 @@ const App = () => (
                 <Route path="/mobility-handoff" element={<MobilityHandoffPage />} />
                 <Route path="/gov-camera-api" element={<GovCameraAPI />} />
                 <Route path="/partner-data" element={<PartnerData />} />
-                <Route path="/exposure-history" element={<ExposureHistory />} />
-                <Route path="/health-profile" element={<HealthProfile />} />
-                <Route path="/medical-id" element={<MedicalID />} />
                 <Route path="/premium" element={<Premium />} />
-                <Route path="/overview" element={<Navigate to="/dashboard" replace />} />
               </Route>
 
               <Route path="*" element={<NotFound />} />
@@ -127,6 +124,5 @@ const App = () => (
     </ThemeProvider>
   </QueryClientProvider>
 );
-
 
 export default App;

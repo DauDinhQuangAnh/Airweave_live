@@ -6,9 +6,10 @@ import {
   Building2,
   Activity,
   ArrowLeft,
-  RefreshCw,
   Radio,
   Zap,
+  BellRing,
+  Key,
 } from 'lucide-react';
 import AuroraBackground from '@/components/AuroraBackground';
 
@@ -20,7 +21,9 @@ export default function AdminLayout() {
     { label: 'Tổng quan Hệ thống', path: '/admin', icon: LayoutDashboard },
     { label: 'Quản lý IoT Nodes', path: '/admin/nodes', icon: Cpu },
     { label: 'Quản lý Tổ chức', path: '/admin/orgs', icon: Building2 },
-    { label: 'Org Dashboard (Xem mẫu)', path: '/org-dashboard', icon: Activity },
+    { label: 'Ngưỡng Cảnh báo', path: '/admin/alerts', icon: BellRing },
+    { label: 'Khóa API & Bảo mật', path: '/admin/api-keys', icon: Key },
+    { label: 'Org Dashboard (Khách)', path: '/org-dashboard', icon: Activity },
   ];
 
   return (
@@ -44,7 +47,7 @@ export default function AdminLayout() {
             </div>
             <div>
               <h1 className="font-heading font-bold text-sm tracking-wide text-white">
-                AirWeave <span className="text-cyan-400 font-normal">IoT Admin</span>
+                AirWeave <span className="text-cyan-400 font-normal">IoT Admin Portal</span>
               </h1>
               <p className="text-[10px] text-white/50">Trung tâm Điều hành Node Cảm biến & Tổ chức</p>
             </div>
@@ -68,7 +71,7 @@ export default function AdminLayout() {
         {/* Navigation Sidebar */}
         <aside className="w-64 border-r border-white/10 bg-black/40 backdrop-blur-md p-4 hidden md:flex flex-col gap-2 shrink-0">
           <div className="text-[11px] font-heading font-semibold text-white/40 uppercase tracking-wider px-3 mb-1">
-            Menu Quản trị
+            Menu Quản trị Hệ thống
           </div>
 
           {navItems.map((item) => {

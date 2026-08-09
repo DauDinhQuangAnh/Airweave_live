@@ -10,6 +10,21 @@ export default defineConfig(() => ({
     hmr: {
       overlay: false,
     },
+    // Cho phép truy cập qua domain ngrok (dev tunnel)
+    allowedHosts: true,
+    // Proxy API + WebSocket sang backend để FE và BE cùng 1 origin
+    // -> chạy được qua ngrok/điện thoại mà không vướng CORS.
+    proxy: {
+      "/api": {
+        target: "http://localhost:4100",
+        changeOrigin: true,
+      },
+      "/socket.io": {
+        target: "http://localhost:4100",
+        changeOrigin: true,
+        ws: true,
+      },
+    },
   },
   plugins: [react()],
   resolve: {

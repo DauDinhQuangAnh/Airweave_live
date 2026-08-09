@@ -7,7 +7,6 @@ import {
   Phone,
   UserCheck,
   X,
-  Sparkles,
   ShieldCheck,
   Search,
   ChevronRight,
@@ -17,79 +16,22 @@ import {
 import { nodesApi } from '@/integrations/api';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-
-export const MOCK_ORGS = [
-  {
-    id: 'org-1',
-    name: 'Sở Tài nguyên & Môi trường Hà Nội',
-    code: 'STNMT-HN',
-    type: 'gov',
-    address: 'Huỳnh Thúc Kháng, Đống Đa, Hà Nội',
-    contact_name: 'Ông Nguyễn Văn An (Trưởng phòng Quản lý MT)',
-    contact_phone: '024.3835.1234',
-    nodesCount: 3,
-    plan_tier: 'Enterprise',
-    status: 'active',
-  },
-  {
-    id: 'org-2',
-    name: 'UBND Thành phố Hồ Chí Minh',
-    code: 'UBND-TPHCM',
-    type: 'gov',
-    address: 'Lê Thánh Tôn, Bến Nghé, Quận 1, TP.HCM',
-    contact_name: 'Bà Trần Thị Bình (Chánh Văn phòng)',
-    contact_phone: '028.3829.5678',
-    nodesCount: 2,
-    plan_tier: 'Enterprise',
-    status: 'active',
-  },
-  {
-    id: 'org-3',
-    name: 'Đại học Quốc gia Hà Nội',
-    code: 'VNU-HN',
-    type: 'school',
-    address: '144 Xuân Thủy, Cầu Giấy, Hà Nội',
-    contact_name: 'PGS.TS Phạm Văn Cường (Viện Môi trường)',
-    contact_phone: '024.3754.7571',
-    nodesCount: 2,
-    plan_tier: 'Professional',
-    status: 'active',
-  },
-  {
-    id: 'org-4',
-    name: 'Khu Công Nghệ Cao TP.HCM (SHTP)',
-    code: 'SHTP-HCM',
-    type: 'enterprise',
-    address: 'Xa lộ Hà Nội, Tân Phú, Thủ Đức, TP.HCM',
-    contact_name: 'Ông Lê Hoàng Dũng (Giám đốc Kỹ thuật)',
-    contact_phone: '028.3736.0088',
-    nodesCount: 3,
-    plan_tier: 'Enterprise',
-    status: 'active',
-  },
-  {
-    id: 'org-5',
-    name: 'Ban Quản lý KCN Bình Dương',
-    code: 'BQLKCN-BD',
-    type: 'industrial',
-    address: 'Đại lộ Bình Dương, Thủ Dầu Một, Bình Dương',
-    contact_name: 'Ông Vũ Minh Đức (Trưởng ban BQL)',
-    contact_phone: '0274.3822.123',
-    nodesCount: 2,
-    plan_tier: 'Professional',
-    status: 'active',
-  },
-];
+import { useAdminOrgs } from './_data/useAdminData';
+import { normalizeOrg } from './_data/normalize';
+import type { AdminOrg } from './_data/types';
+import AdminDataBanner from '@/components/admin/AdminDataBanner';
 
 export default function AdminOrgsManager() {
   const navigate = useNavigate();
-  const [orgs, setOrgs] = useState<any[]>(MOCK_ORGS);
-  const [loading, setLoading] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+  const query = useAdminOrgs();
 
-  // Modals state
+  // State cục bộ nhân bản từ hook để hỗ trợ thêm mới lạc quan (optimistic).
+  const [orgs, setOrgs] = useState<AdminOrg[]>(query.data);
+  useEffect(() => setOrgs(query.data), [query.data]);
+
+  const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [selectedOrg, setSelectedOrg] = useState<any | null>(null);
+  const [selectedOrg, setSelectedOrg] = useState<AdminOrg | null>(null);
 
   // Form state
   const [name, setName] = useState('');
@@ -99,21 +41,6 @@ export default function AdminOrgsManager() {
   const [contactName, setContactName] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const [creating, setCreating] = useState(false);
-
-  const fetchData = async () => {
-    try {
-      const data = await nodesApi.listOrganizations().catch(() => []);
-      if (Array.isArray(data) && data.length > 0) setOrgs(data);
-    } catch {
-      /* fallback to MOCK_ORGS */
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
 
   const filteredOrgs = useMemo(() => {
     return orgs.filter(
@@ -129,36 +56,35 @@ export default function AdminOrgsManager() {
 
     setCreating(true);
     try {
-      const created = await nodesApi
-        .createOrganization({
-          name,
-          code,
-          type,
-          address,
-          contact_name: contactName,
-          contact_phone: contactPhone,
-        })
-        .catch(() => null);
-
-      if (created) {
-        setOrgs((prev) => [created, ...prev]);
+      if (query.mode === 'live') {
+        const created = await nodesApi
+          .createOrganization({ name, code, type, address, contact_name: contactName, contact_phone: contactPhone })
+          .catch(() => null);
+        if (created) {
+          setOrgs((prev) => [normalizeOrg(created), ...prev]);
+          toast.success(`Đã đăng ký Tổ chức "${name}" (LIVE)!`);
+        } else {
+          toast.error('LIVE: Không tạo được tổ chức (kiểm tra API / quyền admin).');
+          return;
+        }
       } else {
-        const localOrg = {
+        const localOrg: AdminOrg = {
           id: `org-${Date.now()}`,
           name,
           code,
           type,
-          address: address || 'Chưa cập nhật',
-          contact_name: contactName || 'Đại diện tổ chức',
-          contact_phone: contactPhone || 'Chưa có SĐT',
+          address: address || null,
+          contact_name: contactName || null,
+          contact_phone: contactPhone || null,
           nodesCount: 0,
-          plan_tier: 'Professional',
+          usersCount: 0,
+          plan_tier: type === 'gov' || type === 'industrial' || type === 'enterprise' ? 'Enterprise' : 'Professional',
           status: 'active',
         };
         setOrgs((prev) => [localOrg, ...prev]);
+        toast.success(`Đã thêm Tổ chức "${name}" (Demo cục bộ)!`);
       }
 
-      toast.success(`Đã đăng ký Tổ chức "${name}" thành công!`);
       setShowAddModal(false);
       setName('');
       setCode('');
@@ -174,18 +100,7 @@ export default function AdminOrgsManager() {
 
   return (
     <div className="space-y-6 font-body">
-      {/* Mock Data Notice */}
-      <div className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-heading font-semibold">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
-          <span>
-            📌 <strong>[QUẢN LÝ SƠ BỘ TỔ CHỨC]</strong> — Hiển thị rút gọn. Bấm vào bất kỳ thẻ Tổ chức nào để mở Pop-up xem chi tiết & điều khiển.
-          </span>
-        </div>
-        <span className="hidden sm:inline-block px-2 py-0.5 rounded bg-amber-500/20 text-[10px] font-bold text-amber-200">
-          SUMMARY ORGS VIEW
-        </span>
-      </div>
+      <AdminDataBanner mode={query.mode} connected={query.connected} error={query.error} loading={query.loading} />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -195,7 +110,7 @@ export default function AdminOrgsManager() {
             Quản lý Tổ chức & Doanh nghiệp Đối tác ({filteredOrgs.length})
           </h2>
           <p className="text-xs text-white/60">
-            Danh sách rút gọn cơ quan nhà nước, trường học, khu công nghiệp sở hữu trạm quan trắc.
+            Danh sách cơ quan nhà nước, trường học, khu công nghiệp sở hữu trạm quan trắc. Bấm thẻ để xem chi tiết.
           </p>
         </div>
 
@@ -230,7 +145,7 @@ export default function AdminOrgsManager() {
         </div>
       </div>
 
-      {/* Clean Summary Orgs Grid (Sơ bộ bên ngoài) */}
+      {/* Orgs Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredOrgs.map((org) => (
           <div
@@ -254,14 +169,14 @@ export default function AdminOrgsManager() {
               </div>
 
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-heading shrink-0">
-                {org.plan_tier || 'Enterprise'}
+                {org.plan_tier}
               </span>
             </div>
 
             <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs">
               <div className="flex items-center gap-1.5 text-cyan-400 font-semibold font-heading">
                 <Cpu className="w-4 h-4" />
-                <span>{org.nodesCount ?? 2} IoT Nodes</span>
+                <span>{org.nodesCount} IoT Nodes</span>
               </div>
 
               <span className="text-[11px] text-cyan-400 group-hover:text-cyan-300 font-heading font-semibold flex items-center gap-1">
@@ -279,7 +194,7 @@ export default function AdminOrgsManager() {
         </div>
       )}
 
-      {/* POP-UP MODAL: Chi tiết Tổ chức & Doanh nghiệp */}
+      {/* POP-UP MODAL: Chi tiết Tổ chức */}
       {selectedOrg && (
         <div
           onClick={(e) => {
@@ -291,7 +206,6 @@ export default function AdminOrgsManager() {
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-xl rounded-2xl bg-slate-900 border border-blue-500/40 p-6 shadow-2xl space-y-5 relative max-h-[90vh] overflow-y-auto cursor-default"
           >
-            {/* Header Pop-up */}
             <div className="flex items-start justify-between border-b border-white/10 pb-4">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 font-extrabold text-xl font-heading">
@@ -306,7 +220,7 @@ export default function AdminOrgsManager() {
                       CODE: {selectedOrg.code}
                     </span>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                      Gói: {selectedOrg.plan_tier || 'Enterprise'}
+                      Gói: {selectedOrg.plan_tier}
                     </span>
                   </div>
                 </div>
@@ -320,14 +234,13 @@ export default function AdminOrgsManager() {
               </button>
             </div>
 
-            {/* Chi tiết liên hệ & Trụ sở */}
             <div className="space-y-3 text-xs">
               <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 space-y-2">
                 <div className="flex items-center gap-2 text-white/80">
                   <MapPin className="w-4 h-4 text-cyan-400 shrink-0" />
                   <div>
                     <span className="text-white/50 text-[10px] block">Trụ sở chính:</span>
-                    <strong>{selectedOrg.address || 'Huỳnh Thúc Kháng, Đống Đa, Hà Nội'}</strong>
+                    <strong>{selectedOrg.address || 'Chưa cập nhật'}</strong>
                   </div>
                 </div>
 
@@ -335,15 +248,15 @@ export default function AdminOrgsManager() {
                   <UserCheck className="w-4 h-4 text-blue-400 shrink-0" />
                   <div>
                     <span className="text-white/50 text-[10px] block">Đại diện Liên hệ:</span>
-                    <strong>{selectedOrg.contact_name || 'Đại diện cơ quan'}</strong>
+                    <strong>{selectedOrg.contact_name || 'Chưa cập nhật'}</strong>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2 text-white/80 pt-1 border-t border-white/5">
                   <Phone className="w-4 h-4 text-emerald-400 shrink-0" />
                   <div>
-                    <span className="text-white/50 text-[10px] block">Số điện thoại khẩn cấp:</span>
-                    <strong className="text-emerald-300 font-mono">{selectedOrg.contact_phone || '024.3835.1234'}</strong>
+                    <span className="text-white/50 text-[10px] block">Số điện thoại:</span>
+                    <strong className="text-emerald-300 font-mono">{selectedOrg.contact_phone || 'Chưa cập nhật'}</strong>
                   </div>
                 </div>
               </div>
@@ -352,19 +265,22 @@ export default function AdminOrgsManager() {
                 <div className="flex items-center justify-between">
                   <span className="text-white/60">Số lượng IoT Nodes quản lý:</span>
                   <span className="font-heading font-bold text-cyan-300 text-sm flex items-center gap-1">
-                    <Cpu className="w-4 h-4" /> {selectedOrg.nodesCount ?? 2} Nodes
+                    <Cpu className="w-4 h-4" /> {selectedOrg.nodesCount} Nodes
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-white/60">Trạng thái Hợp đồng:</span>
+                  <span className="text-white/60">Số tài khoản liên kết:</span>
+                  <span className="text-white/80 font-semibold">{selectedOrg.usersCount} người dùng</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-white/60">Trạng thái:</span>
                   <span className="text-emerald-400 font-semibold flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5" /> HOẠT ĐỘNG
+                    <ShieldCheck className="w-3.5 h-3.5" /> {selectedOrg.status === 'active' ? 'HOẠT ĐỘNG' : selectedOrg.status.toUpperCase()}
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Actions */}
             <div className="pt-2 flex items-center justify-end gap-2 border-t border-white/10">
               <button
                 onClick={() => {
@@ -398,19 +314,14 @@ export default function AdminOrgsManager() {
                 <Building2 className="w-5 h-5 text-blue-400" />
                 Đăng ký Tổ chức / Doanh nghiệp Mới
               </h3>
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="text-white/50 hover:text-white"
-              >
+              <button onClick={() => setShowAddModal(false)} className="text-white/50 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleCreateOrg} className="space-y-3 text-xs font-body">
               <div>
-                <label className="block text-white/70 mb-1 font-heading font-semibold">
-                  Tên Tổ chức / Doanh nghiệp *
-                </label>
+                <label className="block text-white/70 mb-1 font-heading font-semibold">Tên Tổ chức / Doanh nghiệp *</label>
                 <input
                   type="text"
                   required
@@ -422,9 +333,7 @@ export default function AdminOrgsManager() {
               </div>
 
               <div>
-                <label className="block text-white/70 mb-1 font-heading font-semibold">
-                  Mã Định danh (Org Code) *
-                </label>
+                <label className="block text-white/70 mb-1 font-heading font-semibold">Mã Định danh (Org Code) *</label>
                 <input
                   type="text"
                   required
@@ -436,9 +345,7 @@ export default function AdminOrgsManager() {
               </div>
 
               <div>
-                <label className="block text-white/70 mb-1 font-heading font-semibold">
-                  Loại Tổ chức
-                </label>
+                <label className="block text-white/70 mb-1 font-heading font-semibold">Loại Tổ chức</label>
                 <select
                   value={type}
                   onChange={(e) => setType(e.target.value)}
@@ -448,13 +355,12 @@ export default function AdminOrgsManager() {
                   <option value="enterprise">Doanh nghiệp / Tập đoàn</option>
                   <option value="gov">Cơ quan Nhà nước</option>
                   <option value="industrial">Khu Công nghiệp</option>
+                  <option value="hospital">Bệnh viện</option>
                 </select>
               </div>
 
               <div>
-                <label className="block text-white/70 mb-1 font-heading font-semibold">
-                  Địa chỉ Trụ sở
-                </label>
+                <label className="block text-white/70 mb-1 font-heading font-semibold">Địa chỉ Trụ sở</label>
                 <input
                   type="text"
                   placeholder="Địa chỉ trụ sở chính"
@@ -466,9 +372,7 @@ export default function AdminOrgsManager() {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-white/70 mb-1 font-heading font-semibold">
-                    Người liên hệ
-                  </label>
+                  <label className="block text-white/70 mb-1 font-heading font-semibold">Người liên hệ</label>
                   <input
                     type="text"
                     placeholder="Họ và tên"
@@ -478,12 +382,10 @@ export default function AdminOrgsManager() {
                   />
                 </div>
                 <div>
-                  <label className="block text-white/70 mb-1 font-heading font-semibold">
-                    Số điện thoại
-                  </label>
+                  <label className="block text-white/70 mb-1 font-heading font-semibold">Số điện thoại</label>
                   <input
                     type="text"
-                    placeholder="SĐT khẩn cấp"
+                    placeholder="SĐT liên hệ"
                     value={contactPhone}
                     onChange={(e) => setContactPhone(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-400"

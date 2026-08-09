@@ -2,25 +2,38 @@ import { useState } from 'react';
 import {
   AlertTriangle,
   BellRing,
-  ShieldCheck,
   Save,
   Radio,
   Sliders,
-  Sparkles,
   ChevronRight,
   X,
+  Lock,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useDataMode } from './_data/mode';
+import { MOCK_ALERT_CONFIG } from './_data/mock';
+import type { AlertConfig } from './_data/types';
+import AdminDataBanner from '@/components/admin/AdminDataBanner';
+
+const STORAGE_KEY = 'airweave.admin.alertConfig';
+
+function loadConfig(): AlertConfig {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) return { ...MOCK_ALERT_CONFIG, ...JSON.parse(saved) };
+  } catch {
+    /* ignore */
+  }
+  return MOCK_ALERT_CONFIG;
+}
 
 export default function AdminAlertsManager() {
-  const [aqiWarning, setAqiWarning] = useState(100);
-  const [aqiHazardous, setAqiHazardous] = useState(150);
-  const [vocThreshold, setVocThreshold] = useState(200);
-  const [co2Threshold, setCo2Threshold] = useState(800);
-  const [autoPush, setAutoPush] = useState(true);
-  const [autoSmsEmergency, setAutoSmsEmergency] = useState(true);
+  const mode = useDataMode();
+  const readOnly = mode === 'live'; // Chưa có endpoint BE → live chỉ xem.
 
-  // Selected Rule Modal
+  const [cfg, setCfg] = useState<AlertConfig>(loadConfig);
+  const set = <K extends keyof AlertConfig>(k: K, v: AlertConfig[K]) => setCfg((p) => ({ ...p, [k]: v }));
+
   const [selectedRule, setSelectedRule] = useState<any | null>(null);
 
   const rulesList = [
@@ -28,7 +41,7 @@ export default function AdminAlertsManager() {
       id: 'rule-aqi',
       title: 'Quy tắc Ngưỡng Chỉ số AQI & Bụi Mịn',
       category: 'AQI & PM2.5',
-      summary: `Cảnh báo Vàng (AQI ≥ ${aqiWarning}) · Báo động Đỏ (AQI ≥ ${aqiHazardous})`,
+      summary: `Cảnh báo Vàng (AQI ≥ ${cfg.aqiWarning}) · Báo động Đỏ (AQI ≥ ${cfg.aqiHazardous})`,
       icon: Sliders,
       color: 'text-amber-400',
       badge: 'EPA Standard',
@@ -38,7 +51,7 @@ export default function AdminAlertsManager() {
       id: 'rule-gas',
       title: 'Quy tắc Ngưỡng Khí độc VOCs & CO2',
       category: 'Sensirion / NDIR Gas',
-      summary: `VOC Index (≥ ${vocThreshold}) · Nồng độ CO2 (≥ ${co2Threshold} ppm)`,
+      summary: `VOC Index (≥ ${cfg.vocThreshold}) · Nồng độ CO2 (≥ ${cfg.co2Threshold} ppm)`,
       icon: AlertTriangle,
       color: 'text-rose-400',
       badge: 'Toxic Gas Alert',
@@ -48,7 +61,7 @@ export default function AdminAlertsManager() {
       id: 'rule-dispatch',
       title: 'Gửi tin nhắn Tự động (Auto Dispatch)',
       category: 'Push & SMS Channels',
-      summary: `Push Notification (${autoPush ? 'Bật' : 'Tắt'}) · Emergency SMS (${autoSmsEmergency ? 'Bật' : 'Tắt'})`,
+      summary: `Push Notification (${cfg.autoPush ? 'Bật' : 'Tắt'}) · Emergency SMS (${cfg.autoSmsEmergency ? 'Bật' : 'Tắt'})`,
       icon: Radio,
       color: 'text-emerald-400',
       badge: 'Auto Dispatch',
@@ -57,24 +70,24 @@ export default function AdminAlertsManager() {
   ];
 
   const handleSaveConfig = () => {
-    toast.success('Đã lưu cấu hình ngưỡng cảnh báo hệ thống!');
+    if (readOnly) return;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+    } catch {
+      /* ignore */
+    }
+    toast.success('Đã lưu cấu hình ngưỡng cảnh báo (Demo cục bộ)!');
     setSelectedRule(null);
   };
 
   return (
     <div className="space-y-6 font-body">
-      {/* Mock Data Notice */}
-      <div className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-heading font-semibold">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
-          <span>
-            📌 <strong>[QUẢN LÝ SƠ BỘ QUY TẮC CẢNH BÁO]</strong> — Hiển thị rút gọn. Bấm vào bất kỳ quy tắc nào để mở Pop-up tinh chỉnh chi tiết.
-          </span>
-        </div>
-        <span className="hidden sm:inline-block px-2 py-0.5 rounded bg-amber-500/20 text-[10px] font-bold text-amber-200">
-          ALERTS SUMMARY
-        </span>
-      </div>
+      <AdminDataBanner
+        mode={mode}
+        connected={mode === 'demo'}
+        error="Trang Ngưỡng Cảnh báo chưa có endpoint backend."
+        note="Demo-only: lưu cục bộ trên trình duyệt. Cần bổ sung API cấu hình cảnh báo để chạy thật."
+      />
 
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -89,7 +102,14 @@ export default function AdminAlertsManager() {
         </div>
       </div>
 
-      {/* Clean Summary Rule Cards */}
+      {readOnly && (
+        <div className="p-4 rounded-2xl bg-slate-900/60 border border-white/10 text-xs text-white/70 flex items-center gap-2">
+          <Lock className="w-4 h-4 text-rose-400 shrink-0" />
+          Chế độ LIVE: tính năng cấu hình cảnh báo đang phát triển (chưa có backend). Bạn có thể xem nhưng không thể lưu. Chuyển sang <strong className="text-amber-300">Demo</strong> để thử chỉnh sửa.
+        </div>
+      )}
+
+      {/* Rule Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {rulesList.map((rule) => {
           const Icon = rule.icon;
@@ -122,7 +142,7 @@ export default function AdminAlertsManager() {
                   {rule.badge}
                 </span>
                 <span className="text-[11px] font-heading font-semibold text-amber-400 group-hover:text-amber-300 flex items-center gap-1">
-                  Chỉnh sửa <ChevronRight className="w-3.5 h-3.5" />
+                  {readOnly ? 'Xem' : 'Chỉnh sửa'} <ChevronRight className="w-3.5 h-3.5" />
                 </span>
               </div>
             </div>
@@ -130,7 +150,7 @@ export default function AdminAlertsManager() {
         })}
       </div>
 
-      {/* POP-UP MODAL: Tinh chỉnh Chi tiết Quy tắc Cảnh báo */}
+      {/* POP-UP MODAL */}
       {selectedRule && (
         <div
           onClick={(e) => {
@@ -148,135 +168,89 @@ export default function AdminAlertsManager() {
                   <BellRing className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-heading font-bold text-base text-white">
-                    {selectedRule.title}
-                  </h3>
+                  <h3 className="font-heading font-bold text-base text-white">{selectedRule.title}</h3>
                   <p className="text-xs text-white/50">{selectedRule.details}</p>
                 </div>
               </div>
 
-              <button
-                onClick={() => setSelectedRule(null)}
-                className="p-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white"
-              >
+              <button onClick={() => setSelectedRule(null)} className="p-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Content per Rule */}
-            {selectedRule.id === 'rule-aqi' && (
-              <div className="space-y-4 text-xs font-body">
-                <div className="space-y-1.5">
-                  <div className="flex justify-between text-white/80 font-heading font-semibold">
-                    <span>Ngưỡng Cảnh báo Vàng (Sensitive Groups):</span>
-                    <span className="text-amber-400">AQI ≥ {aqiWarning}</span>
+            <fieldset disabled={readOnly} className={readOnly ? 'opacity-60 pointer-events-none' : ''}>
+              {selectedRule.id === 'rule-aqi' && (
+                <div className="space-y-4 text-xs font-body">
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-white/80 font-heading font-semibold">
+                      <span>Ngưỡng Cảnh báo Vàng (Sensitive Groups):</span>
+                      <span className="text-amber-400">AQI ≥ {cfg.aqiWarning}</span>
+                    </div>
+                    <input type="range" min="51" max="150" value={cfg.aqiWarning} onChange={(e) => set('aqiWarning', Number(e.target.value))} className="w-full accent-amber-400" />
                   </div>
-                  <input
-                    type="range"
-                    min="51"
-                    max="150"
-                    value={aqiWarning}
-                    onChange={(e) => setAqiWarning(Number(e.target.value))}
-                    className="w-full accent-amber-400"
-                  />
-                </div>
 
-                <div className="space-y-1.5 pt-2 border-t border-white/5">
-                  <div className="flex justify-between text-white/80 font-heading font-semibold">
-                    <span>Ngưỡng Báo động Đỏ (Hazardous):</span>
-                    <span className="text-rose-400">AQI ≥ {aqiHazardous}</span>
+                  <div className="space-y-1.5 pt-2 border-t border-white/5">
+                    <div className="flex justify-between text-white/80 font-heading font-semibold">
+                      <span>Ngưỡng Báo động Đỏ (Hazardous):</span>
+                      <span className="text-rose-400">AQI ≥ {cfg.aqiHazardous}</span>
+                    </div>
+                    <input type="range" min="101" max="300" value={cfg.aqiHazardous} onChange={(e) => set('aqiHazardous', Number(e.target.value))} className="w-full accent-rose-500" />
                   </div>
-                  <input
-                    type="range"
-                    min="101"
-                    max="300"
-                    value={aqiHazardous}
-                    onChange={(e) => setAqiHazardous(Number(e.target.value))}
-                    className="w-full accent-rose-500"
-                  />
                 </div>
-              </div>
-            )}
+              )}
 
-            {selectedRule.id === 'rule-gas' && (
-              <div className="space-y-4 text-xs font-body">
-                <div className="space-y-1.5">
-                  <div className="flex justify-between text-white/80 font-heading font-semibold">
-                    <span>Chỉ số Khí độc VOC Index (Sensirion SGP40):</span>
-                    <span className="text-amber-400">{vocThreshold} / 500</span>
+              {selectedRule.id === 'rule-gas' && (
+                <div className="space-y-4 text-xs font-body">
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-white/80 font-heading font-semibold">
+                      <span>Chỉ số Khí độc VOC Index (Sensirion SGP40):</span>
+                      <span className="text-amber-400">{cfg.vocThreshold} / 500</span>
+                    </div>
+                    <input type="range" min="100" max="400" value={cfg.vocThreshold} onChange={(e) => set('vocThreshold', Number(e.target.value))} className="w-full accent-amber-400" />
                   </div>
-                  <input
-                    type="range"
-                    min="100"
-                    max="400"
-                    value={vocThreshold}
-                    onChange={(e) => setVocThreshold(Number(e.target.value))}
-                    className="w-full accent-amber-400"
-                  />
-                </div>
 
-                <div className="space-y-1.5 pt-2 border-t border-white/5">
-                  <div className="flex justify-between text-white/80 font-heading font-semibold">
-                    <span>Nồng độ CO2 Bí khí (ppm):</span>
-                    <span className="text-cyan-400">{co2Threshold} ppm</span>
+                  <div className="space-y-1.5 pt-2 border-t border-white/5">
+                    <div className="flex justify-between text-white/80 font-heading font-semibold">
+                      <span>Nồng độ CO2 Bí khí (ppm):</span>
+                      <span className="text-cyan-400">{cfg.co2Threshold} ppm</span>
+                    </div>
+                    <input type="range" min="600" max="2000" step="50" value={cfg.co2Threshold} onChange={(e) => set('co2Threshold', Number(e.target.value))} className="w-full accent-cyan-400" />
                   </div>
-                  <input
-                    type="range"
-                    min="600"
-                    max="2000"
-                    step="50"
-                    value={co2Threshold}
-                    onChange={(e) => setCo2Threshold(Number(e.target.value))}
-                    className="w-full accent-cyan-400"
-                  />
                 </div>
-              </div>
-            )}
+              )}
 
-            {selectedRule.id === 'rule-dispatch' && (
-              <div className="space-y-3 text-xs font-body">
-                <div className="p-3.5 rounded-xl bg-slate-950/60 border border-white/10 flex items-center justify-between">
-                  <div>
-                    <div className="font-heading font-bold text-white">Gửi Push Notification</div>
-                    <p className="text-white/50 text-[11px]">Thông báo ứng dụng cho người dùng gần trạm bị ô nhiễm.</p>
+              {selectedRule.id === 'rule-dispatch' && (
+                <div className="space-y-3 text-xs font-body">
+                  <div className="p-3.5 rounded-xl bg-slate-950/60 border border-white/10 flex items-center justify-between">
+                    <div>
+                      <div className="font-heading font-bold text-white">Gửi Push Notification</div>
+                      <p className="text-white/50 text-[11px]">Thông báo ứng dụng cho người dùng gần trạm bị ô nhiễm.</p>
+                    </div>
+                    <input type="checkbox" checked={cfg.autoPush} onChange={(e) => set('autoPush', e.target.checked)} className="w-5 h-5 accent-cyan-400 cursor-pointer" />
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={autoPush}
-                    onChange={(e) => setAutoPush(e.target.checked)}
-                    className="w-5 h-5 accent-cyan-400 cursor-pointer"
-                  />
-                </div>
 
-                <div className="p-3.5 rounded-xl bg-slate-950/60 border border-white/10 flex items-center justify-between">
-                  <div>
-                    <div className="font-heading font-bold text-white">Gửi SMS Khẩn cấp SOS</div>
-                    <p className="text-white/50 text-[11px]">Gửi SMS cho đại diện Tổ chức khi Node mất nguồn.</p>
+                  <div className="p-3.5 rounded-xl bg-slate-950/60 border border-white/10 flex items-center justify-between">
+                    <div>
+                      <div className="font-heading font-bold text-white">Gửi SMS Khẩn cấp SOS</div>
+                      <p className="text-white/50 text-[11px]">Gửi SMS cho đại diện Tổ chức khi Node mất nguồn.</p>
+                    </div>
+                    <input type="checkbox" checked={cfg.autoSmsEmergency} onChange={(e) => set('autoSmsEmergency', e.target.checked)} className="w-5 h-5 accent-amber-400 cursor-pointer" />
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={autoSmsEmergency}
-                    onChange={(e) => setAutoSmsEmergency(e.target.checked)}
-                    className="w-5 h-5 accent-amber-400 cursor-pointer"
-                  />
                 </div>
-              </div>
-            )}
+              )}
+            </fieldset>
 
             <div className="pt-3 flex items-center justify-end gap-2 border-t border-white/10">
-              <button
-                type="button"
-                onClick={() => setSelectedRule(null)}
-                className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white font-heading font-semibold text-xs"
-              >
-                Hủy
+              <button type="button" onClick={() => setSelectedRule(null)} className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white font-heading font-semibold text-xs">
+                Đóng
               </button>
               <button
                 type="button"
                 onClick={handleSaveConfig}
-                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-heading font-bold text-xs flex items-center gap-1.5"
+                disabled={readOnly}
+                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-heading font-bold text-xs flex items-center gap-1.5"
               >
-                <Save className="w-4 h-4" /> Lưu Quy tắc
+                <Save className="w-4 h-4" /> {readOnly ? 'Không khả dụng (LIVE)' : 'Lưu Quy tắc'}
               </button>
             </div>
           </div>

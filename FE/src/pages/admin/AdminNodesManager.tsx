@@ -7,7 +7,6 @@ import {
   Wifi,
   Wrench,
   X,
-  Sparkles,
   ShieldAlert,
   Battery,
   Radio,
@@ -19,60 +18,57 @@ import {
   Activity,
   ChevronRight,
   AlertCircle,
-  Sun,
-  ShieldCheck,
 } from 'lucide-react';
 
 import { nodesApi } from '@/integrations/api';
-import { MOCK_NODES } from './AdminDashboard';
-import { MOCK_ORGS } from './AdminOrgsManager';
 import { toast } from 'sonner';
+import { useAdminNodes, useAdminOrgs } from './_data/useAdminData';
+import { normalizeNode } from './_data/normalize';
+import { HARDWARE_SPEC } from './_data/hardware';
+import type { AdminNode, NodeEdition, NodeStatus } from './_data/types';
+import AdminDataBanner from '@/components/admin/AdminDataBanner';
+
+function statusStyle(status: NodeStatus) {
+  if (status === 'online') return { pill: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40', Icon: Wifi };
+  if (status === 'maintenance') return { pill: 'bg-amber-500/15 text-amber-400 border-amber-500/40 animate-pulse', Icon: Wrench };
+  return { pill: 'bg-rose-500/15 text-rose-400 border-rose-500/40', Icon: ShieldAlert };
+}
+
+function aqiStyle(aqi: number | null) {
+  if (aqi == null) return 'text-white/50 bg-white/5 border-white/10';
+  if (aqi <= 50) return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
+  if (aqi <= 100) return 'text-amber-400 bg-amber-500/10 border-amber-500/30';
+  return 'text-rose-400 bg-rose-500/10 border-rose-500/30';
+}
 
 export default function AdminNodesManager() {
-  const [nodes, setNodes] = useState<any[]>(MOCK_NODES);
-  const [orgs, setOrgs] = useState<any[]>(MOCK_ORGS);
-  const [loading, setLoading] = useState(false);
+  const nodesQuery = useAdminNodes();
+  const orgsQuery = useAdminOrgs();
 
-  // Search & Filters state
+  const [nodes, setNodes] = useState<AdminNode[]>(nodesQuery.data);
+  useEffect(() => setNodes(nodesQuery.data), [nodesQuery.data]);
+  const orgs = orgsQuery.data;
+
+  // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [orgFilter, setOrgFilter] = useState<string>('all');
   const [editionFilter, setEditionFilter] = useState<string>('all');
 
-  // Modals state
+  // Modals
   const [showAddModal, setShowAddModal] = useState(false);
-  const [selectedNode, setSelectedNode] = useState<any | null>(null);
+  const [selectedNode, setSelectedNode] = useState<AdminNode | null>(null);
 
-  // Form state for creating Node
+  // Form
   const [chipId, setChipId] = useState('');
   const [name, setName] = useState('');
   const [locationName, setLocationName] = useState('');
   const [selectedOrgId, setSelectedOrgId] = useState('');
-  const [editionType, setEditionType] = useState('outdoor');
+  const [editionType, setEditionType] = useState<NodeEdition>('outdoor');
   const [lat, setLat] = useState('21.0285');
   const [lng, setLng] = useState('105.8542');
   const [creating, setCreating] = useState(false);
 
-  const fetchData = async () => {
-    try {
-      const [nData, oData] = await Promise.all([
-        nodesApi.listNodes().catch(() => []),
-        nodesApi.listOrganizations().catch(() => []),
-      ]);
-      if (Array.isArray(nData) && nData.length > 0) setNodes(nData);
-      if (Array.isArray(oData) && oData.length > 0) setOrgs(oData);
-    } catch {
-      /* fallback */
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  // Filtered nodes logic
   const filteredNodes = useMemo(() => {
     return nodes.filter((n) => {
       const matchesSearch =
@@ -80,18 +76,16 @@ export default function AdminNodesManager() {
         n.chip_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (n.location_name && n.location_name.toLowerCase().includes(searchTerm.toLowerCase()));
 
-      const matchesStatus =
-        statusFilter === 'all' || n.status.toLowerCase() === statusFilter.toLowerCase();
+      const matchesStatus = statusFilter === 'all' || n.status === statusFilter;
 
       const matchesOrg =
         orgFilter === 'all'
           ? true
           : orgFilter === 'unassigned'
-          ? !n.organization_id && !n.organization_name
-          : n.organization_id === orgFilter || n.organization_name === orgFilter;
+          ? !n.organization_id
+          : n.organization_id === orgFilter;
 
-      const matchesEdition =
-        editionFilter === 'all' || n.edition_type === editionFilter;
+      const matchesEdition = editionFilter === 'all' || n.edition === editionFilter;
 
       return matchesSearch && matchesStatus && matchesOrg && matchesEdition;
     });
@@ -103,54 +97,63 @@ export default function AdminNodesManager() {
 
     setCreating(true);
     try {
-      const created = await nodesApi
-        .createNode({
-          chip_id: chipId,
-          name,
-          location_name: locationName || 'Khu vực chính',
-          organization_id: selectedOrgId || undefined,
-          lat: parseFloat(lat) || 21.0285,
-          lng: parseFloat(lng) || 105.8542,
-        })
-        .catch(() => null);
+      const spec = HARDWARE_SPEC[editionType];
+      const orgObj = orgs.find((o) => o.id === selectedOrgId);
 
-      if (created) {
-        setNodes((prev) => [created, ...prev]);
+      if (nodesQuery.mode === 'live') {
+        const created = await nodesApi
+          .createNode({
+            chip_id: chipId,
+            name,
+            location_name: locationName || 'Khu vực chính',
+            organization_id: selectedOrgId || undefined,
+            lat: parseFloat(lat) || 21.0285,
+            lng: parseFloat(lng) || 105.8542,
+            // BE chưa nhận `edition`; truyền hardware_ver để normalize suy ra phiên bản.
+            hardware_ver: spec.hardwareVer,
+          })
+          .catch(() => null);
+        if (created) {
+          setNodes((prev) => [normalizeNode(created), ...prev]);
+          toast.success(`Đã đăng ký IoT Node "${name}" (LIVE)!`);
+        } else {
+          toast.error('LIVE: Không tạo được node (kiểm tra API / Chip ID trùng / quyền admin).');
+          return;
+        }
       } else {
-        const orgObj = orgs.find((o) => o.id === selectedOrgId);
-        const isOutdoor = editionType === 'outdoor';
-        const localNode = {
+        const localNode: AdminNode = {
           id: `node-${Date.now()}`,
           chip_id: chipId,
           name,
-          edition: isOutdoor ? '☀️ Outdoor Solar Edition' : '🔌 Indoor Campus Grid Edition',
-          edition_type: editionType,
+          edition: editionType,
+          editionLabel: spec.label,
+          editionShortLabel: spec.shortLabel,
           location_name: locationName || 'Khu vực chính',
-          organization_name: orgObj?.name || null,
           organization_id: selectedOrgId || null,
+          organization_name: orgObj?.name || null,
           status: 'online',
           aqi: 35,
-          pm25: 14.0,
-          pm10: 24.0,
-          temperature: 30.0,
+          pm25: 14,
+          pm10: 24,
+          temperature: 30,
           humidity: 70,
-          co2: 400,
-          voc_index: 30,
-          uv_index: isOutdoor ? 6.5 : 1.5,
-          battery: isOutdoor ? 98 : 100,
+          co2: editionType === 'indoor' ? 480 : null,
+          voc_index: editionType === 'indoor' ? 60 : null,
+          uv_index: editionType === 'outdoor' ? 6.5 : null,
+          battery: editionType === 'outdoor' ? 98 : 100,
           rssi: -55,
-          mcu: 'ESP32-S3 (Anten IPEX 8dBi)',
-          power_source: isOutdoor
-            ? 'Solar Panel 5V/6W + 2x 18650 Battery'
-            : 'Adapter 5V/2A Type-C 24/7',
-          sensors: isOutdoor
-            ? ['Winsen ZH03B Laser', 'Sensirion SHT30', 'Winsen ZE12A (CO/NO2/SO2/O3)', 'UVM-30A UV Sensor']
-            : ['Winsen ZH03B Laser', 'Sensirion SHT30', 'Winsen ZE12A', 'Winsen MH-Z19C NDIR CO2', 'Sensirion SGP40 VOCs'],
+          mcu: spec.mcu,
+          power_source: spec.powerSource,
+          sensors: [...spec.sensors],
+          hardware_ver: spec.hardwareVer,
+          lat: parseFloat(lat) || 21.0285,
+          lng: parseFloat(lng) || 105.8542,
+          last_reading_at: null,
         };
         setNodes((prev) => [localNode, ...prev]);
+        toast.success(`Đã thêm IoT Node "${name}" (Demo cục bộ)!`);
       }
 
-      toast.success(`Đã đăng ký thành công IoT Node "${name}"!`);
       setShowAddModal(false);
       setChipId('');
       setName('');
@@ -164,25 +167,14 @@ export default function AdminNodesManager() {
 
   const handleAssignOrg = async (nodeId: string, orgId: string) => {
     try {
-      await nodesApi.assignNodeToOrg(nodeId, orgId).catch(() => null);
       const orgObj = orgs.find((o) => o.id === orgId);
-      setNodes((prev) =>
-        prev.map((n) =>
-          n.id === nodeId
-            ? {
-                ...n,
-                organization_id: orgId || null,
-                organization_name: orgObj?.name || null,
-              }
-            : n
-        )
-      );
+      if (nodesQuery.mode === 'live') {
+        await nodesApi.assignNodeToOrg(nodeId, orgId).catch(() => null);
+      }
+      const patch = { organization_id: orgId || null, organization_name: orgObj?.name || null };
+      setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, ...patch } : n)));
       if (selectedNode && selectedNode.id === nodeId) {
-        setSelectedNode((prev: any) => ({
-          ...prev,
-          organization_id: orgId || null,
-          organization_name: orgObj?.name || null,
-        }));
+        setSelectedNode((prev) => (prev ? { ...prev, ...patch } : prev));
       }
       toast.success('Đã gán lại Tổ chức sở hữu cho Trạm!');
     } catch (err) {
@@ -191,23 +183,16 @@ export default function AdminNodesManager() {
   };
 
   const handleSendRemoteCommand = (command: string) => {
-    toast.success(`Đã gửi lệnh từ xa "${command}" tới trạm ${selectedNode?.chip_id}!`);
+    if (nodesQuery.mode === 'live') {
+      toast.info(`LIVE: Kênh điều khiển từ xa (MQTT downlink) chưa được nối. Lệnh "${command}" chưa gửi.`);
+    } else {
+      toast.success(`[Demo] Đã mô phỏng gửi lệnh "${command}" tới trạm ${selectedNode?.chip_id}!`);
+    }
   };
 
   return (
     <div className="space-y-6">
-      {/* Mock Data Notice */}
-      <div className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-heading font-semibold">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
-          <span>
-            📌 <strong>[QUẢN LÝ THIẾT BỊ HARDWARE SPEC 2.0]</strong> — Chuẩn hóa 2 phiên bản: ☀️ Outdoor Solar Edition (Pin Solar 18650) & 🔌 Indoor Campus Grid Edition (Adapter 5V Type-C).
-          </span>
-        </div>
-        <span className="hidden sm:inline-block px-2 py-0.5 rounded bg-amber-500/20 text-[10px] font-bold text-amber-200">
-          HARDWARE SPEC 2.0
-        </span>
-      </div>
+      <AdminDataBanner mode={nodesQuery.mode} connected={nodesQuery.connected} error={nodesQuery.error} loading={nodesQuery.loading} />
 
       {/* Top Controls Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -232,7 +217,6 @@ export default function AdminNodesManager() {
 
       {/* Search & Filter Toolbar */}
       <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex flex-col md:flex-row items-center gap-3">
-        {/* Search Input */}
         <div className="relative flex-1 w-full">
           <Search className="w-4 h-4 text-white/40 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
@@ -252,7 +236,6 @@ export default function AdminNodesManager() {
           )}
         </div>
 
-        {/* Edition Filter */}
         <div className="w-full md:w-44 shrink-0">
           <select
             value={editionFilter}
@@ -265,14 +248,13 @@ export default function AdminNodesManager() {
           </select>
         </div>
 
-        {/* Status Filter */}
         <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto shrink-0">
           <SlidersHorizontal className="w-4 h-4 text-cyan-400 shrink-0 hidden sm:inline-block" />
           <div className="flex gap-1.5 bg-slate-900/60 p-1 rounded-xl border border-white/10 text-xs font-heading">
             {[
               { key: 'all', label: 'Tất cả' },
               { key: 'online', label: 'Online' },
-              { key: 'warning', label: 'Cảnh báo' },
+              { key: 'maintenance', label: 'Bảo trì' },
               { key: 'offline', label: 'Offline' },
             ].map((st) => (
               <button
@@ -290,7 +272,6 @@ export default function AdminNodesManager() {
           </div>
         </div>
 
-        {/* Org Filter */}
         <div className="w-full md:w-48 shrink-0">
           <select
             value={orgFilter}
@@ -308,19 +289,12 @@ export default function AdminNodesManager() {
         </div>
       </div>
 
-      {/* Clean Summary Cards Grid (No heavy details upfront) */}
+      {/* Node Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredNodes.map((node) => {
-          const isOnline = node.status === 'online';
-          const isWarning = node.status === 'warning';
-          const isUnassigned = !node.organization_id && !node.organization_name;
-          const isOutdoor = node.edition_type === 'outdoor';
-          const aqiColor =
-            node.aqi <= 50
-              ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
-              : node.aqi <= 100
-              ? 'text-amber-400 bg-amber-500/10 border-amber-500/30'
-              : 'text-rose-400 bg-rose-500/10 border-rose-500/30';
+          const st = statusStyle(node.status);
+          const isUnassigned = !node.organization_id;
+          const isOutdoor = node.edition === 'outdoor';
 
           return (
             <div
@@ -328,7 +302,6 @@ export default function AdminNodesManager() {
               onClick={() => setSelectedNode(node)}
               className="p-4 rounded-2xl bg-white/5 border border-white/10 hover:border-cyan-400/50 hover:bg-white/[0.07] transition-all cursor-pointer space-y-3 group relative shadow-lg"
             >
-              {/* Header: Name + Chip ID + Status */}
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -342,31 +315,22 @@ export default function AdminNodesManager() {
                   </div>
                 </div>
 
-                <span
-                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase shrink-0 ${
-                    isOnline
-                      ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40'
-                      : isWarning
-                      ? 'bg-rose-500/15 text-rose-400 border-rose-500/40 animate-pulse'
-                      : 'bg-amber-500/15 text-amber-400 border-amber-500/40'
-                  }`}
-                >
-                  {isOnline ? <Wifi className="w-3 h-3" /> : isWarning ? <ShieldAlert className="w-3 h-3" /> : <Wrench className="w-3 h-3" />}
+                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase shrink-0 ${st.pill}`}>
+                  <st.Icon className="w-3 h-3" />
                   {node.status}
                 </span>
               </div>
 
-              {/* Sơ bộ: Phiên bản + Vị trí + Tổ chức + AQI tóm tắt */}
               <div className="space-y-1.5 text-xs text-white/70 font-body">
                 <div className="flex items-center gap-1.5">
                   <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${isOutdoor ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' : 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30'}`}>
-                    {isOutdoor ? '☀️ Outdoor Solar' : '🔌 Indoor Campus Grid'}
+                    {node.editionShortLabel}
                   </span>
                 </div>
 
                 <div className="flex items-center gap-1.5 text-white/60">
                   <MapPin className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                  <span className="truncate">{node.location_name || 'Vị trí trạm'}</span>
+                  <span className="truncate">{node.location_name}</span>
                 </div>
 
                 <div className="flex items-center gap-1.5 text-white/60">
@@ -377,20 +341,17 @@ export default function AdminNodesManager() {
                       Chưa gán (Trụ tự do)
                     </span>
                   ) : (
-                    <span className="truncate text-white/90 font-medium">
-                      {node.organization_name}
-                    </span>
+                    <span className="truncate text-white/90 font-medium">{node.organization_name}</span>
                   )}
                 </div>
               </div>
 
-              {/* Footer row: Quick AQI chip + Click to view popup */}
               <div className="pt-2.5 border-t border-white/10 flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2">
-                  <span className={`px-2 py-0.5 rounded font-bold border text-xs font-heading ${aqiColor}`}>
-                    AQI {node.aqi}
+                  <span className={`px-2 py-0.5 rounded font-bold border text-xs font-heading ${aqiStyle(node.aqi)}`}>
+                    AQI {node.aqi ?? '—'}
                   </span>
-                  <span className="text-[11px] text-white/50">{node.pm25} µg/m³</span>
+                  <span className="text-[11px] text-white/50">{node.pm25 ?? '—'} µg/m³</span>
                 </div>
 
                 <span className="text-[11px] font-heading font-semibold text-cyan-400 group-hover:text-cyan-300 flex items-center gap-1">
@@ -409,7 +370,7 @@ export default function AdminNodesManager() {
         </div>
       )}
 
-      {/* POP-UP MODAL: Chi tiết Thông số Kỹ thuật Chuẩn & Linh kiện BOM */}
+      {/* POP-UP MODAL: Chi tiết Node */}
       {selectedNode && (
         <div
           onClick={(e) => {
@@ -421,7 +382,6 @@ export default function AdminNodesManager() {
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-2xl rounded-2xl bg-slate-900 border border-cyan-500/40 p-6 shadow-2xl space-y-5 relative max-h-[90vh] overflow-y-auto font-body cursor-default"
           >
-            {/* Header Pop-up */}
             <div className="flex items-start justify-between border-b border-white/10 pb-4">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
@@ -429,16 +389,14 @@ export default function AdminNodesManager() {
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="font-heading font-extrabold text-lg text-white">
-                      {selectedNode.name}
-                    </h3>
+                    <h3 className="font-heading font-extrabold text-lg text-white">{selectedNode.name}</h3>
                     <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
                       {selectedNode.chip_id}
                     </span>
                   </div>
                   <div className="flex items-center gap-2 mt-1">
                     <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                      {selectedNode.edition || '☀️ Outdoor Solar Edition'}
+                      {selectedNode.editionLabel}
                     </span>
                     <p className="text-xs text-white/60 flex items-center gap-1">
                       <MapPin className="w-3.5 h-3.5 text-cyan-400" />
@@ -456,7 +414,6 @@ export default function AdminNodesManager() {
               </button>
             </div>
 
-            {/* Grid 1: Các chỉ số telemetry kỹ thuật chi tiết */}
             <div className="space-y-2">
               <h4 className="font-heading font-bold text-xs uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
                 <Activity className="w-4 h-4" /> Telemetry Môi trường Realtime
@@ -465,39 +422,32 @@ export default function AdminNodesManager() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
                   <span className="text-white/50 text-[10px]">Bụi ZH03B Laser PM2.5</span>
-                  <div className="font-heading font-bold text-base text-white">{selectedNode.pm25} µg/m³</div>
+                  <div className="font-heading font-bold text-base text-white">{selectedNode.pm25 ?? '—'} µg/m³</div>
                 </div>
-
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
                   <span className="text-white/50 text-[10px]">Bụi PM10</span>
-                  <div className="font-heading font-bold text-base text-white">{selectedNode.pm10} µg/m³</div>
+                  <div className="font-heading font-bold text-base text-white">{selectedNode.pm10 ?? '—'} µg/m³</div>
                 </div>
-
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
                   <span className="text-white/50 text-[10px]">Chỉ số AQI</span>
-                  <div className="font-heading font-bold text-base text-amber-300">AQI {selectedNode.aqi}</div>
+                  <div className="font-heading font-bold text-base text-amber-300">AQI {selectedNode.aqi ?? '—'}</div>
                 </div>
-
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
                   <span className="text-white/50 text-[10px]">Sensirion SHT30 Nhiệt/Ẩm</span>
-                  <div className="font-heading font-bold text-base text-white">{selectedNode.temperature}°C · {selectedNode.humidity}%</div>
+                  <div className="font-heading font-bold text-base text-white">{selectedNode.temperature ?? '—'}°C · {selectedNode.humidity ?? '—'}%</div>
                 </div>
-
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
-                  <span className="text-white/50 text-[10px]">Khí độc ZE12A (CO/NO2/SO2/O3)</span>
-                  <div className="font-heading font-bold text-base text-cyan-300">{selectedNode.co2 || 410} ppm</div>
+                  <span className="text-white/50 text-[10px]">Khí CO2 NDIR (Indoor)</span>
+                  <div className="font-heading font-bold text-base text-cyan-300">{selectedNode.co2 ?? '—'} ppm</div>
                 </div>
-
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
                   <span className="text-white/50 text-[10px]">Sensirion SGP40 VOCs</span>
-                  <div className="font-heading font-bold text-base text-amber-400">{selectedNode.voc_index || 45}</div>
+                  <div className="font-heading font-bold text-base text-amber-400">{selectedNode.voc_index ?? '—'}</div>
                 </div>
-
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
-                  <span className="text-white/50 text-[10px]">Cường độ UV (LTR-390/UVM-30A)</span>
-                  <div className="font-heading font-bold text-base text-purple-400">UV Index {selectedNode.uv_index || 6.2}</div>
+                  <span className="text-white/50 text-[10px]">Cường độ UV (Outdoor)</span>
+                  <div className="font-heading font-bold text-base text-purple-400">UV {selectedNode.uv_index ?? '—'}</div>
                 </div>
-
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
                   <span className="text-white/50 text-[10px]">Pin & Tín hiệu Sóng</span>
                   <div className="font-heading font-bold text-sm text-emerald-400">🔋 {selectedNode.battery}% · {selectedNode.rssi} dBm</div>
@@ -505,7 +455,6 @@ export default function AdminNodesManager() {
               </div>
             </div>
 
-            {/* Grid 2: Thông tin Linh kiện Phần cứng chuẩn BOM (IOT_NODE_HARDWARE_SPECIFICATION.md) */}
             <div className="space-y-2 pt-2 border-t border-white/10">
               <h4 className="font-heading font-bold text-xs uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
                 <Zap className="w-4 h-4" /> Danh mục Linh kiện Phần cứng BOM (Hardware Spec)
@@ -513,16 +462,16 @@ export default function AdminNodesManager() {
               <div className="p-3.5 rounded-xl bg-slate-950/60 border border-white/10 text-xs space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-white/60">MCU Vi điều khiển:</span>
-                  <span className="font-mono text-cyan-300 font-semibold">{selectedNode.mcu || 'ESP32-S3 (Anten IPEX 8dBi)'}</span>
+                  <span className="font-mono text-cyan-300 font-semibold">{selectedNode.mcu}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-white/60">Khối Nguồn cấp điện:</span>
-                  <span className="font-mono text-emerald-300 text-[11px]">{selectedNode.power_source || 'Solar Panel 5V/6W + 2x 18650 Pin 5200mAh'}</span>
+                  <span className="font-mono text-emerald-300 text-[11px]">{selectedNode.power_source}</span>
                 </div>
                 <div className="space-y-1 pt-1">
                   <span className="text-white/60 block">Mô-đun Cảm biến tích hợp:</span>
                   <div className="flex flex-wrap gap-1.5">
-                    {(selectedNode.sensors || ['Winsen ZH03B Laser', 'Sensirion SHT30', 'Winsen ZE12A (CO/NO2/SO2/O3)', 'UVM-30A UV Sensor']).map((s: string) => (
+                    {selectedNode.sensors.map((s) => (
                       <span key={s} className="px-2 py-1 rounded bg-cyan-500/10 border border-cyan-500/30 text-[10px] text-cyan-300 font-semibold font-mono">
                         ✓ {s}
                       </span>
@@ -532,7 +481,6 @@ export default function AdminNodesManager() {
               </div>
             </div>
 
-            {/* Grid 3: Gán Tổ chức & Điều khiển Từ xa */}
             <div className="space-y-3 pt-2 border-t border-white/10">
               <div className="flex items-center justify-between">
                 <label className="font-heading font-bold text-xs text-white flex items-center gap-1.5">
@@ -553,7 +501,6 @@ export default function AdminNodesManager() {
                 </select>
               </div>
 
-              {/* Action Remote Commands */}
               <div className="flex flex-wrap gap-2 pt-2">
                 <button
                   onClick={() => handleSendRemoteCommand('Remote Reboot')}
@@ -592,19 +539,14 @@ export default function AdminNodesManager() {
                 <Cpu className="w-5 h-5 text-cyan-400" />
                 Đăng ký IoT Node Mới
               </h3>
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="text-white/50 hover:text-white"
-              >
+              <button onClick={() => setShowAddModal(false)} className="text-white/50 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleCreateNode} className="space-y-3 text-xs font-body">
               <div>
-                <label className="block text-white/70 mb-1 font-heading font-semibold">
-                  Mã Hardware Chip ID *
-                </label>
+                <label className="block text-white/70 mb-1 font-heading font-semibold">Mã Hardware Chip ID *</label>
                 <input
                   type="text"
                   required
@@ -616,9 +558,7 @@ export default function AdminNodesManager() {
               </div>
 
               <div>
-                <label className="block text-white/70 mb-1 font-heading font-semibold">
-                  Tên gợi nhớ Trạm đo *
-                </label>
+                <label className="block text-white/70 mb-1 font-heading font-semibold">Tên gợi nhớ Trạm đo *</label>
                 <input
                   type="text"
                   required
@@ -630,12 +570,10 @@ export default function AdminNodesManager() {
               </div>
 
               <div>
-                <label className="block text-white/70 mb-1 font-heading font-semibold">
-                  Phiên bản Phần cứng (Edition)
-                </label>
+                <label className="block text-white/70 mb-1 font-heading font-semibold">Phiên bản Phần cứng (Edition)</label>
                 <select
                   value={editionType}
-                  onChange={(e) => setEditionType(e.target.value)}
+                  onChange={(e) => setEditionType(e.target.value as NodeEdition)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-white/10 text-amber-300 focus:outline-none"
                 >
                   <option value="outdoor">☀️ Outdoor Solar Edition (Pin Solar 18650)</option>
@@ -644,9 +582,7 @@ export default function AdminNodesManager() {
               </div>
 
               <div>
-                <label className="block text-white/70 mb-1 font-heading font-semibold">
-                  Tổ chức sở hữu (Tùy chọn)
-                </label>
+                <label className="block text-white/70 mb-1 font-heading font-semibold">Tổ chức sở hữu (Tùy chọn)</label>
                 <select
                   value={selectedOrgId}
                   onChange={(e) => setSelectedOrgId(e.target.value)}
@@ -663,9 +599,7 @@ export default function AdminNodesManager() {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-white/70 mb-1 font-heading font-semibold">
-                    Vĩ độ (Latitude)
-                  </label>
+                  <label className="block text-white/70 mb-1 font-heading font-semibold">Vĩ độ (Latitude)</label>
                   <input
                     type="number"
                     step="any"
@@ -675,9 +609,7 @@ export default function AdminNodesManager() {
                   />
                 </div>
                 <div>
-                  <label className="block text-white/70 mb-1 font-heading font-semibold">
-                    Kinh độ (Longitude)
-                  </label>
+                  <label className="block text-white/70 mb-1 font-heading font-semibold">Kinh độ (Longitude)</label>
                   <input
                     type="number"
                     step="any"

@@ -1,46 +1,19 @@
 import { useState } from 'react';
-import { Key, ShieldCheck, Copy, Check, RefreshCw, Lock, Sparkles, X, ChevronRight } from 'lucide-react';
+import { Key, ShieldCheck, Copy, Check, RefreshCw, Lock, X, ChevronRight, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
+import { useDataMode } from './_data/mode';
+import { MOCK_API_KEYS } from './_data/mock';
+import type { ApiKey } from './_data/types';
+import AdminDataBanner from '@/components/admin/AdminDataBanner';
 
 export default function AdminApiKeysManager() {
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  const [selectedKey, setSelectedKey] = useState<any | null>(null);
+  const mode = useDataMode();
+  const readOnly = mode === 'live'; // Chưa có endpoint BE → live chỉ xem.
 
-  const keysList = [
-    {
-      id: 'key-1',
-      name: 'ESP32 Nodes Hardware Master Key',
-      prefix: 'awk_node_live_9f823...',
-      full_secret: 'awk_node_live_9f823a4b9c1d0e2f3a4b5c6d7e8f9012',
-      created_at: '2026-08-01',
-      scope: 'Node Telemetry Ingest',
-      status: 'active',
-      ip_whitelist: '14.225.10.15, 113.160.22.4',
-      revocation_history: 'Chưa có lịch sử thu hồi',
-    },
-    {
-      id: 'key-2',
-      name: 'MQTT Broker Auth Token',
-      prefix: 'awk_mqtt_prod_77c12...',
-      full_secret: 'awk_mqtt_prod_77c12d3e4f5a6b7c8d9e0f1a2b3c4d5e',
-      created_at: '2026-08-02',
-      scope: 'MQTT Pub/Sub Telemetry',
-      status: 'active',
-      ip_whitelist: 'Tất cả IP (MQTT Port 1883/8883)',
-      revocation_history: 'Chưa có lịch sử thu hồi',
-    },
-    {
-      id: 'key-3',
-      name: 'Enterprise Organization API Access Token',
-      prefix: 'awk_org_ent_11b54...',
-      full_secret: 'awk_org_ent_11b54c3d2e1f0a9b8c7d6e5f4a3b2c1d',
-      created_at: '2026-08-05',
-      scope: 'REST API Org Read',
-      status: 'active',
-      ip_whitelist: '118.70.180.20',
-      revocation_history: 'Thu hồi lần 1 vào 2026-07-28',
-    },
-  ];
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [selectedKey, setSelectedKey] = useState<ApiKey | null>(null);
+
+  const keysList = MOCK_API_KEYS;
 
   const handleCopy = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -50,24 +23,22 @@ export default function AdminApiKeysManager() {
   };
 
   const handleRegenerate = (name: string) => {
-    toast.success(`Đã cấp lại khóa API mới cho "${name}"!`);
+    if (readOnly) {
+      toast.info('LIVE: Quản lý khóa API đang phát triển (chưa có backend).');
+      return;
+    }
+    toast.success(`[Demo] Đã mô phỏng cấp lại khóa API cho "${name}"!`);
     setSelectedKey(null);
   };
 
   return (
     <div className="space-y-6 font-body">
-      {/* Mock Data Notice */}
-      <div className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-heading font-semibold">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
-          <span>
-            📌 <strong>[QUẢN LÝ SƠ BỘ KHÓA BẢO MẬT]</strong> — Hiển thị rút gọn. Bấm vào bất kỳ dòng Khóa API nào để mở Pop-up xem secret & phân quyền.
-          </span>
-        </div>
-        <span className="hidden sm:inline-block px-2 py-0.5 rounded bg-amber-500/20 text-[10px] font-bold text-amber-200">
-          KEYS SUMMARY
-        </span>
-      </div>
+      <AdminDataBanner
+        mode={mode}
+        connected={mode === 'demo'}
+        error="Trang Khóa API chưa có endpoint backend."
+        note="Demo-only: secret hiển thị là dữ liệu mẫu. Thực tế API không bao giờ trả full secret sau khi tạo."
+      />
 
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -83,14 +54,25 @@ export default function AdminApiKeysManager() {
 
         <button
           onClick={() => handleRegenerate('Mới')}
-          className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-slate-950 font-heading text-xs font-bold flex items-center gap-2 shadow-lg shadow-cyan-500/20 transition-all shrink-0"
+          disabled={readOnly}
+          className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-heading text-xs font-bold flex items-center gap-2 shadow-lg shadow-cyan-500/20 transition-all shrink-0"
         >
           <Key className="w-4 h-4" />
           Tạo Khóa API Mới
         </button>
       </div>
 
-      {/* Clean Summary API Keys Table (Sơ bộ bên ngoài) */}
+      {/* Security note */}
+      <div className="p-4 rounded-2xl bg-slate-900/60 border border-white/10 text-xs text-white/70 flex items-start gap-2">
+        <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+        <span>
+          <strong className="text-amber-300">Lưu ý bảo mật (khi lên LIVE):</strong> full secret chỉ được hiển thị đúng
+          một lần lúc tạo; API danh sách chỉ nên trả prefix + hash. Cần thêm bảng <code className="text-cyan-300">api_keys</code> ở BE
+          (hash bằng bcrypt/argon2) trước khi bật thật.
+        </span>
+      </div>
+
+      {/* Keys Table */}
       <div className="rounded-2xl bg-white/5 border border-white/10 p-5 space-y-4">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs font-body">
@@ -116,9 +98,7 @@ export default function AdminApiKeysManager() {
                       <span>{item.name}</span>
                     </div>
                   </td>
-                  <td className="py-3.5 font-mono text-cyan-300 text-[11px]">
-                    {item.prefix}
-                  </td>
+                  <td className="py-3.5 font-mono text-cyan-300 text-[11px]">{item.prefix}</td>
                   <td className="py-3.5 text-white/70">
                     <span className="px-2 py-0.5 rounded bg-white/10 text-[10px] font-semibold text-white/80">
                       {item.scope}
@@ -126,7 +106,7 @@ export default function AdminApiKeysManager() {
                   </td>
                   <td className="py-3.5">
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
-                      <ShieldCheck className="w-3 h-3" /> ACTIVE
+                      <ShieldCheck className="w-3 h-3" /> {item.status.toUpperCase()}
                     </span>
                   </td>
                   <td className="py-3.5 pr-1 text-right">
@@ -141,7 +121,7 @@ export default function AdminApiKeysManager() {
         </div>
       </div>
 
-      {/* POP-UP MODAL: Chi tiết Khóa API & Secret Token */}
+      {/* POP-UP MODAL */}
       {selectedKey && (
         <div
           onClick={(e) => {
@@ -153,34 +133,27 @@ export default function AdminApiKeysManager() {
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-xl rounded-2xl bg-slate-900 border border-cyan-500/40 p-6 shadow-2xl space-y-5 relative max-h-[90vh] overflow-y-auto cursor-default font-body"
           >
-            {/* Header */}
             <div className="flex items-start justify-between border-b border-white/10 pb-4">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
                   <Key className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="font-heading font-extrabold text-lg text-white">
-                    {selectedKey.name}
-                  </h3>
+                  <h3 className="font-heading font-extrabold text-lg text-white">{selectedKey.name}</h3>
                   <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                    STATUS: ACTIVE
+                    STATUS: {selectedKey.status.toUpperCase()}
                   </span>
                 </div>
               </div>
 
-              <button
-                onClick={() => setSelectedKey(null)}
-                className="p-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white"
-              >
+              <button onClick={() => setSelectedKey(null)} className="p-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Secret Key Display */}
             <div className="space-y-2">
               <label className="text-white/60 text-xs font-heading font-semibold block">
-                Mã Khóa Secret Bí mật (Full Token):
+                Mã Khóa Secret Bí mật (Full Token · dữ liệu Demo):
               </label>
               <div className="p-3 rounded-xl bg-black/70 font-mono text-xs text-cyan-300 border border-white/10 flex items-center justify-between break-all gap-2">
                 <span>{selectedKey.full_secret}</span>
@@ -194,7 +167,6 @@ export default function AdminApiKeysManager() {
               </div>
             </div>
 
-            {/* Details */}
             <div className="space-y-2.5 text-xs text-white/80">
               <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 space-y-2">
                 <div className="flex justify-between">
@@ -216,13 +188,13 @@ export default function AdminApiKeysManager() {
               </div>
             </div>
 
-            {/* Action buttons */}
             <div className="pt-2 flex items-center justify-end gap-2 border-t border-white/10">
               <button
                 onClick={() => handleRegenerate(selectedKey.name)}
-                className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-heading font-bold text-xs flex items-center gap-1.5"
+                disabled={readOnly}
+                className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-600 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-heading font-bold text-xs flex items-center gap-1.5"
               >
-                <RefreshCw className="w-4 h-4" /> Cấp lại Khóa Mới
+                <RefreshCw className="w-4 h-4" /> {readOnly ? 'Không khả dụng (LIVE)' : 'Cấp lại Khóa Mới'}
               </button>
             </div>
           </div>

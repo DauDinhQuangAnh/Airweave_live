@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -10,12 +9,15 @@ import {
   Zap,
   BellRing,
   Key,
+  Database,
 } from 'lucide-react';
 import AuroraBackground from '@/components/AuroraBackground';
+import { useDataMode, setDataMode } from '@/pages/admin/_data/mode';
 
 export default function AdminLayout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const dataMode = useDataMode();
 
   const navItems = [
     { label: 'Tổng quan Hệ thống', path: '/admin', icon: LayoutDashboard },
@@ -55,11 +57,35 @@ export default function AdminLayout() {
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            MQTT Broker: Live
+          {/* Công tắc nguồn dữ liệu Demo ⇄ Live (đồng bộ toàn bộ trang admin) */}
+          <div className="flex items-center gap-1 p-1 rounded-full bg-slate-900/80 border border-white/10">
+            <button
+              onClick={() => setDataMode('demo')}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-heading font-bold transition-all ${
+                dataMode === 'demo'
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                  : 'text-white/50 hover:text-white'
+              }`}
+              title="Dữ liệu mẫu hardcode"
+            >
+              <Database className="w-3.5 h-3.5" />
+              Demo
+            </button>
+            <button
+              onClick={() => setDataMode('live')}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-heading font-bold transition-all ${
+                dataMode === 'live'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                  : 'text-white/50 hover:text-white'
+              }`}
+              title="Dữ liệu thật từ API"
+            >
+              <span className={`w-2 h-2 rounded-full ${dataMode === 'live' ? 'bg-emerald-400 animate-pulse' : 'bg-white/30'}`} />
+              Live
+            </button>
           </div>
-          <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-white/60 text-xs">
+
+          <div className="hidden lg:flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-white/60 text-xs">
             <Radio className="w-3.5 h-3.5 text-cyan-400" />
             Node Protocol: MQTT / HTTP
           </div>

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">AirWeave</string>
+    <string name="title_activity_main">AirWeave</string>
+    <string name="package_name">com.airweave.app</string>
+    <string name="custom_url_scheme">com.airweave.app</string>
+</resources>

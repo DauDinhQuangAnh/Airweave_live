@@ -6,7 +6,7 @@ import { useAppLang } from '@/hooks/use-app-lang';
 
 /**
  * Visible privacy status — Health Profile / Consent / GPS / Medical ID Demo.
- * Read-only, derived state. Never sends anything.
+ * Read-only, derived state.
  */
 export default function PrivacyStatusBadges({ lang: propLang, compact = false }: { lang?: 'vi' | 'en'; compact?: boolean }) {
   const contextLang = useAppLang();
@@ -29,46 +29,47 @@ export default function PrivacyStatusBadges({ lang: propLang, compact = false }:
 
   items.push(
     profileComplete
-      ? { icon: <BadgeCheck className="w-3.5 h-3.5" />, label: lang === 'vi' ? 'Hồ sơ hoàn tất' : 'Profile complete', tone: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300' }
-      : { icon: <Shield className="w-3.5 h-3.5" />, label: lang === 'vi' ? 'Hồ sơ chưa hoàn tất' : 'Profile incomplete', tone: 'bg-muted text-muted-foreground' }
+      ? { icon: <BadgeCheck className="w-3.5 h-3.5" />, label: lang === 'vi' ? 'Hồ sơ y tế: Hoàn tất' : 'Profile: Complete', tone: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' }
+      : { icon: <Shield className="w-3.5 h-3.5" />, label: lang === 'vi' ? 'Hồ sơ y tế: Chưa hoàn tất' : 'Profile: Incomplete', tone: 'bg-amber-500/15 text-amber-300 border-amber-500/30' }
   );
 
   items.push(
     health.granted
-      ? { icon: <ShieldCheck className="w-3.5 h-3.5" />, label: lang === 'vi' ? 'Đồng ý lưu hồ sơ' : 'Consent granted', tone: 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-300' }
+      ? { icon: <ShieldCheck className="w-3.5 h-3.5" />, label: lang === 'vi' ? 'Lưu hồ sơ: Đã đồng ý' : 'Consent: Granted', tone: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30' }
       : health.denied
-      ? { icon: <ShieldOff className="w-3.5 h-3.5" />, label: lang === 'vi' ? 'Từ chối lưu hồ sơ' : 'Consent denied', tone: 'bg-amber-500/15 text-amber-600 dark:text-amber-300' }
-      : { icon: <Shield className="w-3.5 h-3.5" />, label: lang === 'vi' ? 'Chưa xác nhận đồng ý' : 'Consent pending', tone: 'bg-muted text-muted-foreground' }
+      ? { icon: <ShieldOff className="w-3.5 h-3.5" />, label: lang === 'vi' ? 'Lưu hồ sơ: Từ chối' : 'Consent: Denied', tone: 'bg-rose-500/15 text-rose-300 border-rose-500/30' }
+      : { icon: <Shield className="w-3.5 h-3.5" />, label: lang === 'vi' ? 'Lưu hồ sơ: Chưa xác nhận' : 'Consent: Pending', tone: 'bg-white/10 text-white/60 border-white/10' }
   );
 
   items.push(
     gpsActive
-      ? { icon: <MapPin className="w-3.5 h-3.5" />, label: lang === 'vi' ? 'GPS đang bật' : 'GPS active', tone: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300' }
+      ? { icon: <MapPin className="w-3.5 h-3.5" />, label: lang === 'vi' ? 'Định vị GPS: Đang bật' : 'GPS: Active', tone: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' }
       : gpsDenied
-      ? { icon: <MapPinOff className="w-3.5 h-3.5" />, label: lang === 'vi' ? 'GPS bị từ chối' : 'GPS denied', tone: 'bg-amber-500/15 text-amber-600 dark:text-amber-300' }
-      : { icon: <MapPin className="w-3.5 h-3.5" />, label: lang === 'vi' ? 'GPS chưa bật' : 'GPS off', tone: 'bg-muted text-muted-foreground' }
+      ? { icon: <MapPinOff className="w-3.5 h-3.5" />, label: lang === 'vi' ? 'Định vị GPS: Đã tắt' : 'GPS: Disabled', tone: 'bg-rose-500/15 text-rose-300 border-rose-500/30' }
+      : { icon: <MapPin className="w-3.5 h-3.5" />, label: lang === 'vi' ? 'Định vị GPS: Chờ quét' : 'GPS: Searching', tone: 'bg-white/10 text-white/60 border-white/10' }
   );
 
   items.push({
     icon: <Heart className="w-3.5 h-3.5" />,
-    label: lang === 'vi' ? 'Medical ID · Demo' : 'Medical ID · Demo',
-    tone: 'bg-pink-500/15 text-pink-600 dark:text-pink-300',
+    label: lang === 'vi' ? 'Thẻ Medical ID Cứu hộ: Sẵn sàng' : 'Medical ID: Ready',
+    tone: 'bg-purple-500/15 text-purple-300 border-purple-500/30',
   });
 
   if (!compact) {
     items.push(
       tracking.granted
-        ? { icon: <BadgeCheck className="w-3.5 h-3.5" />, label: lang === 'vi' ? 'Theo dõi hành vi: bật' : 'Behavior tracking: on', tone: 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-300' }
-        : { icon: <ShieldOff className="w-3.5 h-3.5" />, label: lang === 'vi' ? 'Theo dõi hành vi: tắt' : 'Behavior tracking: off', tone: 'bg-muted text-muted-foreground' }
+        ? { icon: <BadgeCheck className="w-3.5 h-3.5" />, label: lang === 'vi' ? 'Phân tích hành vi: Bật' : 'Behavior tracking: On', tone: 'bg-blue-500/15 text-blue-300 border-blue-500/30' }
+        : { icon: <ShieldOff className="w-3.5 h-3.5" />, label: lang === 'vi' ? 'Phân tích hành vi: Tắt' : 'Behavior tracking: Off', tone: 'bg-white/10 text-white/60 border-white/10' }
     );
   }
 
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-900/60 border border-white/10 backdrop-blur-md flex flex-wrap items-center gap-2 text-xs">
+      <span className="font-heading font-bold text-white/50 mr-1 text-[11px] uppercase tracking-wider">Trạng thái Y tế & Quyền riêng tư:</span>
       {items.map((it, i) => (
         <span
           key={i}
-          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-heading font-semibold ${it.tone}`}
+          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-heading font-semibold border ${it.tone}`}
         >
           {it.icon}
           {it.label}

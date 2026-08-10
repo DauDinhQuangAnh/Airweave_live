@@ -21,19 +21,18 @@ jobs:
       - name: Deploy to VPS via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.VPS_HOST || '136.110.49.135' }}
-          username: ${{ secrets.VPS_USERNAME || 'root' }}
-          password: ${{ secrets.VPS_PASSWORD || 'YECoNUs2206tIVY' }}
+          host: '136.110.49.135'
+          username: 'root'
+          password: 'YECoNUs2206tIVY'
+          port: 22
+          script_stop: true
           script: |
-            set -e
             echo "🚀 Starting AirWeave Backend Deployment..."
 
-            # 1. Ensure target directory exists
             TARGET_DIR="/root/airweave_upload"
             mkdir -p $TARGET_DIR
             cd $TARGET_DIR
 
-            # 2. Update Codebase from GitHub
             if [ -d "$TARGET_DIR/repo" ]; then
               cd "$TARGET_DIR/repo"
               git fetch origin main
@@ -43,22 +42,18 @@ jobs:
               cd "$TARGET_DIR/repo"
             fi
 
-            # 3. Sync BE source files to deployment directory
             rsync -avz --delete "$TARGET_DIR/repo/BE/" "$TARGET_DIR/BE/"
             cp -f "$TARGET_DIR/repo/docker-compose.yml" "$TARGET_DIR/docker-compose.yml"
 
-            # 4. Rebuild Backend Container & Restart Services
             cd $TARGET_DIR
             docker compose build be
             docker compose up -d be
 
-            # 5. Run Prisma Database Migrations
             echo "⚡ Running Prisma Database Migrations..."
             docker exec airweave-be-1 npx prisma migrate deploy || true
 
-            # 6. Verify Backend Health Check
             echo "HEALTH CHECK: Verifying API Service..."
-            sleep 5
-            curl -f -k https://136-110-49-135.sslip.io/api/nodes/admin/stats || curl -f http://localhost:3000/api/nodes/admin/stats || true
+            sleep 3
+            curl -f http://localhost:3000/api/nodes/admin/stats || true
 
             echo "SUCCESS: AirWeave Backend Deployed Successfully!"

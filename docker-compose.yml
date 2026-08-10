@@ -1,46 +1,55 @@
+name: airweave
+
 services:
-  postgres:
+  db:
     image: postgres:16-alpine
-    container_name: airweave-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: airweave
-      POSTGRES_PASSWORD: airweave_local_pw
-      POSTGRES_DB: airweave
-    # Dùng 5433 ở host để tránh đụng Postgres đã cài sẵn trên máy (đang chiếm 5432)
-    ports:
-      - "5433:5432"
+      POSTGRES_DB: ${POSTGRES_DB:-airweave}
+      POSTGRES_USER: ${POSTGRES_USER:-airweave}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-airweave_local_pw}
     volumes:
       - airweave_pgdata:/var/lib/postgresql/data
-    networks:
-      - airweave-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U airweave -d airweave"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-airweave} -d $${POSTGRES_DB:-airweave}"]
+      interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 10s
+    networks:
+      - internal
 
   redis:
     image: redis:7-alpine
-    container_name: airweave-redis
     restart: unless-stopped
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-    ports:
-      - "6379:6379"
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
     volumes:
-      - airweave_redisdata:/data
+      - airweave_redis:/data
     networks:
-      - airweave-net
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+      - internal
+
+  be:
+    build:
+      context: ./BE
+      dockerfile: Dockerfile
+    image: airweave-be:local
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    networks:
+      internal:
+      weavecarbon_default:
+        aliases:
+          - airweave-be
 
 networks:
-  airweave-net:
+  internal:
     driver: bridge
+  weavecarbon_default:
+    external: true
 
 volumes:
   airweave_pgdata:
-  airweave_redisdata:
+  airweave_redis:

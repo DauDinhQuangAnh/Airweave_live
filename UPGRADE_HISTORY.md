@@ -57,9 +57,9 @@
 
 
   - **Tài khoản `admin`/`admin` Gateway**: Đăng nhập tài khoản/mật khẩu `admin`/`admin` mở ngay lập tức **Admin IoT Portal** (xem mã Chip, Pin %, RSSI, Zero-Touch MQTT Auto-Discover). Đăng nhập thường mở giao diện **Người dùng (End-User)**.
-  - **Báo cáo Ô nhiễm Cộng đồng** ([report_incident_dialog.dart](file:///d:/hoctap/AIR/airweave_real/Airweave_live/flutter/lib/widgets/report_incident_dialog.dart)): Dialog báo cáo đốt rác, khói bụi công trình kèm vị trí GPS thời gian thực.
-  - **Khuyến cáo Sức khỏe Cá nhân hóa** ([health_guidance_card.dart](file:///d:/hoctap/AIR/airweave_real/Airweave_live/flutter/lib/widgets/health_guidance_card.dart)): Lời khuyên sức khỏe cho nhóm nhạy cảm (Hen suyễn, Trẻ nhỏ, Mẹ bầu, Người già).
-  - **Smart Route Tránh Ô nhiễm** ([smart_route_screen.dart](file:///d:/hoctap/AIR/airweave_real/Airweave_live/flutter/lib/screens/smart_route_screen.dart)): Tìm tuyến đường xanh sạch tránh 100% các điểm nóng ô nhiễm không khí.
+  - **Báo cáo Ô nhiễm Cộng đồng**: Dialog báo cáo đốt rác, khói bụi công trình kèm vị trí GPS thời gian thực.
+  - **Khuyến cáo Sức khỏe Cá nhân hóa**: Lời khuyên sức khỏe cho nhóm nhạy cảm (Hen suyễn, Trẻ nhỏ, Mẹ bầu, Người già).
+  - **Smart Route Tránh Ô nhiễm**: Tìm tuyến đường xanh sạch tránh 100% các điểm nóng ô nhiễm không khí.
 
 
 

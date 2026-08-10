@@ -1,0 +1,114 @@
+{
+  "user": {
+    "id": "demo-user-0001",
+    "email": "demo@airweave.vn",
+    "provider": "demo",
+    "display_name": "Nguyễn Văn A",
+    "avatar_url": null,
+    "onboarding_completed": true
+  },
+  "profile": {
+    "id": "demo-profile-0001",
+    "user_id": "demo-user-0001",
+    "display_name": "Nguyễn Văn A",
+    "avatar_url": null,
+    "phone": "0901 234 567",
+    "date_of_birth": "1996-05-20",
+    "account_tier": "free",
+    "onboarding_completed": true,
+    "created_at": "2026-01-15T02:30:00.000Z",
+    "updated_at": "2026-08-01T09:00:00.000Z"
+  },
+  "preferences": {
+    "id": "demo-pref-0001",
+    "user_id": "demo-user-0001",
+    "health_tier": ["asthma"],
+    "active_hours": ["morning", "evening"],
+    "commute_type": ["motorbike"],
+    "medical_history": ["respiratory"],
+    "purifier_status": "has_purifier",
+    "route_priority": "clean_air",
+    "alert_mode": "smart",
+    "sensitive_group": "respiratory",
+    "custom_sensitivity_note": "Dễ khó thở khi AQI vượt 100.",
+    "not_sure": false,
+    "alert_threshold": 100,
+    "high_exposure": false,
+    "affiliate_target": false,
+    "notify_enabled": true,
+    "quiet_hours_start": 22,
+    "quiet_hours_end": 6,
+    "last_alert_aqi": 118,
+    "last_alert_at": "2026-08-09T11:20:00.000Z",
+    "created_at": "2026-01-15T02:35:00.000Z",
+    "updated_at": "2026-08-09T11:20:00.000Z"
+  },
+  "locations": [
+    {
+      "id": "demo-loc-home",
+      "user_id": "demo-user-0001",
+      "location_type": "home",
+      "label": "Nhà — Quận 3",
+      "lat": 10.7797,
+      "lng": 106.6875,
+      "created_at": "2026-01-15T02:40:00.000Z",
+      "updated_at": "2026-01-15T02:40:00.000Z"
+    },
+    {
+      "id": "demo-loc-work",
+      "user_id": "demo-user-0001",
+      "location_type": "work",
+      "label": "Công ty — Quận 1",
+      "lat": 10.7769,
+      "lng": 106.7009,
+      "created_at": "2026-01-15T02:41:00.000Z",
+      "updated_at": "2026-01-15T02:41:00.000Z"
+    },
+    {
+      "id": "demo-loc-school",
+      "user_id": "demo-user-0001",
+      "location_type": "school",
+      "label": "Trường con — Quận Bình Thạnh",
+      "lat": 10.8039,
+      "lng": 106.7108,
+      "created_at": "2026-01-15T02:42:00.000Z",
+      "updated_at": "2026-01-15T02:42:00.000Z"
+    }
+  ],
+  "liveContext": {
+    "id": "demo-live-0001",
+    "user_id": "demo-user-0001",
+    "label": "Vị trí hiện tại (demo)",
+    "lat": 10.7769,
+    "lng": 106.7009,
+    "accuracy": 25,
+    "aqi": 96,
+    "pm25": 34.2,
+    "pm10": 58.1,
+    "temperature": 31.5,
+    "humidity": 72,
+    "wind_speed": 2.4,
+    "wind_direction": "ĐN",
+    "source": "demo",
+    "station": "TP.HCM — Lãnh sự quán Hoa Kỳ",
+    "snapshot_updated_at": "2026-08-10T01:00:00.000Z",
+    "created_at": "2026-08-10T01:00:00.000Z",
+    "updated_at": "2026-08-10T01:00:00.000Z"
+  },
+  "loginHistory": [
+    {
+      "id": "demo-login-1",
+      "user_id": "demo-user-0001",
+      "login_at": "2026-08-10T01:00:00.000Z",
+      "ip_address": "113.161.0.10",
+      "user_agent": "AirWeave Demo"
+    },
+    {
+      "id": "demo-login-2",
+      "user_id": "demo-user-0001",
+      "login_at": "2026-08-09T23:10:00.000Z",
+      "ip_address": "113.161.0.10",
+      "user_agent": "AirWeave Demo"
+    }
+  ]
+}

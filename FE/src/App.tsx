@@ -6,6 +6,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import GeoPrewarm from "./components/GeoPrewarm";
+import DemoModeBanner from "./components/DemoModeBanner";
 import { Loader2 } from "lucide-react";
 
 const Landing = lazy(() => import("./pages/Landing.tsx"));
@@ -76,6 +77,7 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <GeoPrewarm />
+          <DemoModeBanner />
           <Suspense fallback={<PageFallback />}>
             <Routes>
               <Route path="/" element={<Landing />} />

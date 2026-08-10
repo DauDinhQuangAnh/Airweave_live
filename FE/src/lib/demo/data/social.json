@@ -1,0 +1,80 @@
+{
+  "communityReports": [
+    {
+      "id": "demo-report-1",
+      "lat": 10.7769,
+      "lng": 106.7009,
+      "kind": "dust",
+      "text": "Bụi mù khu vực Bến Thành, tầm nhìn giảm.",
+      "created_at": "2026-08-10T00:30:00.000Z",
+      "expires_at": "2026-08-10T06:30:00.000Z"
+    },
+    {
+      "id": "demo-report-2",
+      "lat": 10.8039,
+      "lng": 106.7108,
+      "kind": "smell",
+      "text": "Mùi khét gần cầu Bình Triệu.",
+      "created_at": "2026-08-09T23:45:00.000Z",
+      "expires_at": "2026-08-10T05:45:00.000Z"
+    },
+    {
+      "id": "demo-report-3",
+      "lat": 10.7326,
+      "lng": 106.7196,
+      "kind": "smoke",
+      "text": "Khói đốt rác ở khu dân cư Quận 7.",
+      "created_at": "2026-08-09T22:10:00.000Z",
+      "expires_at": "2026-08-10T04:10:00.000Z"
+    }
+  ],
+  "myCommunityReports": [
+    {
+      "id": "demo-report-mine-1",
+      "lat": 10.7797,
+      "lng": 106.6875,
+      "kind": "dust",
+      "text": "Bụi công trình gần nhà (báo cáo demo của tôi).",
+      "created_at": "2026-08-09T15:00:00.000Z",
+      "expires_at": "2026-08-09T21:00:00.000Z"
+    }
+  ],
+  "medicalProfiles": [
+    {
+      "id": "demo-med-self",
+      "user_id": "demo-user-0001",
+      "relation": "self",
+      "display_name": "Nguyễn Văn A",
+      "birth_year": 1996,
+      "blood_type": "O+",
+      "emergency_phone": "0901 234 567",
+      "emergency_name": "Trần Thị B (vợ)",
+      "avatar_emoji": "🧑",
+      "created_at": "2026-01-15T02:50:00.000Z",
+      "updated_at": "2026-06-01T02:50:00.000Z",
+      "conditions": [
+        { "id": "demo-cond-1", "profile_id": "demo-med-self", "user_id": "demo-user-0001", "category": "respiratory", "code": "asthma", "note": "Hen suyễn nhẹ, dùng ống hít khi cần.", "created_at": "2026-01-15T02:51:00.000Z" },
+        { "id": "demo-cond-2", "profile_id": "demo-med-self", "user_id": "demo-user-0001", "category": "allergy", "code": "dust", "note": "Dị ứng bụi mịn.", "created_at": "2026-01-15T02:52:00.000Z" }
+      ]
+    },
+    {
+      "id": "demo-med-child",
+      "user_id": "demo-user-0001",
+      "relation": "child",
+      "display_name": "Bé Nguyễn An",
+      "birth_year": 2018,
+      "blood_type": "A+",
+      "emergency_phone": "0901 234 567",
+      "emergency_name": "Nguyễn Văn A (bố)",
+      "avatar_emoji": "🧒",
+      "created_at": "2026-01-15T02:55:00.000Z",
+      "updated_at": "2026-06-01T02:55:00.000Z",
+      "conditions": []
+    }
+  ],
+  "conditions": [
+    { "id": "demo-cond-1", "profile_id": "demo-med-self", "user_id": "demo-user-0001", "category": "respiratory", "code": "asthma", "note": "Hen suyễn nhẹ, dùng ống hít khi cần.", "created_at": "2026-01-15T02:51:00.000Z" },
+    { "id": "demo-cond-2", "profile_id": "demo-med-self", "user_id": "demo-user-0001", "category": "allergy", "code": "dust", "note": "Dị ứng bụi mịn.", "created_at": "2026-01-15T02:52:00.000Z" }
+  ],
+  "sosEvents": []
+}

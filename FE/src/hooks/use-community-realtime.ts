@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { API_URL } from '@/lib/api-client';
+import { isDemoMode } from '@/lib/demo/demo-mode';
 import type { CommunityReport } from '@/integrations/api';
 
 /** Gốc server WebSocket — cắt bỏ hậu tố /api của REST base URL. */
@@ -44,6 +45,9 @@ export function useCommunityRealtime({ onNew, onDeleted }: Handlers) {
   handlersRef.current = { onNew, onDeleted };
 
   useEffect(() => {
+    // Chế độ demo chạy offline hoàn toàn — không mở kết nối WebSocket tới backend.
+    if (isDemoMode()) return;
+
     const socket = acquireSocket();
 
     const handleNew = (report: CommunityReport) => handlersRef.current.onNew?.(report);

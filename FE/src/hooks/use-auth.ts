@@ -2,6 +2,12 @@ import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { authApi, profilesApi, type AuthSession, type AuthUser } from '@/integrations/api';
 import { tokenStore, onUnauthorized, ApiError } from '@/lib/api-client';
 import { initOneSignal, setOneSignalExternalId } from '@/lib/onesignal';
+import {
+  enableDemoMode,
+  disableDemoMode,
+  DEMO_ACCESS_TOKEN,
+  DEMO_REFRESH_TOKEN,
+} from '@/lib/demo/demo-mode';
 
 export interface AuthState {
   user: AuthUser | null;
@@ -149,33 +155,45 @@ export function useAuth() {
   const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   const signIn = useCallback(async (email: string, password: string) => {
+    disableDemoMode(); // đảm bảo đăng nhập thật không bị lớp demo chặn
     applySession(await authApi.signIn(email, password));
   }, []);
 
   const signUp = useCallback(async (email: string, password: string, displayName?: string) => {
+    disableDemoMode();
     applySession(await authApi.signUp(email, password, displayName));
   }, []);
 
   const signInWithGoogle = useCallback(() => {
+    disableDemoMode();
     authApi.signInWithGoogle();
   }, []);
 
   const signOut = useCallback(async () => {
     await authApi.signOut();
+    disableDemoMode();
     clearAuthState();
     window.location.href = '/';
   }, []);
 
-  /** Tài khoản demo — BE tự tạo và reset onboarding để luôn thấy lại phần cá nhân hoá. */
+  /**
+   * Chế độ Demo — chạy hoàn toàn bằng dữ liệu hardcode/JSON trên FE, KHÔNG gọi backend.
+   * Mọi request sau đó được lớp demo (demo-api.ts) trả về dữ liệu giả.
+   */
   const demoLogin = useCallback(async () => {
-    const session = await authApi.demoLogin();
+    enableDemoMode();
+    tokenStore.set({
+      access_token: DEMO_ACCESS_TOKEN,
+      refresh_token: DEMO_REFRESH_TOKEN,
+      expires_in: 3600,
+    });
+    const session = await authApi.demoLogin(); // đã được lớp demo chặn → session giả
     setAuthState({
       user: session.user,
       session,
       loading: false,
-      onboardingCompleted: false,
+      onboardingCompleted: session.user.onboarding_completed,
     });
-    void initPushForUser(session.user.id);
   }, []);
 
   const refreshOnboarding = useCallback(async () => {

@@ -4,6 +4,9 @@
  * trùng nhau vào một lần gọi duy nhất.
  */
 
+import { isDemoMode } from '@/lib/demo/demo-mode';
+import { resolveDemo } from '@/lib/demo/demo-api';
+
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
 
 const ACCESS_TOKEN_KEY = 'airweave.access_token';
@@ -104,6 +107,11 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { skipAuth, body, query, headers, ...init } = options;
+
+  // Chế độ Demo: không gọi backend, trả dữ liệu hardcode/JSON trên FE.
+  if (isDemoMode()) {
+    return resolveDemo<T>(init.method ?? 'GET', path, body, query);
+  }
 
   let url = `${API_URL}${path}`;
   if (query) {

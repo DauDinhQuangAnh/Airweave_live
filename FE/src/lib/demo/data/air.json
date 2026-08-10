@@ -1,0 +1,65 @@
+{
+  "waqiPoint": {
+    "source": "waqi",
+    "available": true,
+    "aqi": 96,
+    "station": "TP.HCM — Lãnh sự quán Hoa Kỳ",
+    "distanceKm": 1.2,
+    "pm25": 34.2,
+    "pm10": 58.1,
+    "o3": 22.4,
+    "no2": 18.9,
+    "so2": 4.1,
+    "co": 6.2,
+    "temperature": 31.5,
+    "humidity": 72,
+    "wind": 2.4,
+    "dominantPollutant": "pm25",
+    "time": "2026-08-10T01:00:00.000Z"
+  },
+  "stations": [
+    { "uid": 1001, "lat": 10.7769, "lng": 106.7009, "aqi": 96, "station": "Quận 1 — Lãnh sự quán Hoa Kỳ", "time": "2026-08-10T01:00:00.000Z" },
+    { "uid": 1002, "lat": 10.7797, "lng": 106.6875, "aqi": 88, "station": "Quận 3 — Võ Văn Tần", "time": "2026-08-10T01:00:00.000Z" },
+    { "uid": 1003, "lat": 10.8039, "lng": 106.7108, "aqi": 112, "station": "Bình Thạnh — Điện Biên Phủ", "time": "2026-08-10T01:00:00.000Z" },
+    { "uid": 1004, "lat": 10.7326, "lng": 106.7196, "aqi": 134, "station": "Quận 7 — Nguyễn Thị Thập", "time": "2026-08-10T01:00:00.000Z" },
+    { "uid": 1005, "lat": 10.8231, "lng": 106.6297, "aqi": 79, "station": "Tân Bình — Trường Chinh", "time": "2026-08-10T01:00:00.000Z" },
+    { "uid": 1006, "lat": 10.8700, "lng": 106.8030, "aqi": 65, "station": "Thủ Đức — Xa lộ Hà Nội", "time": "2026-08-10T01:00:00.000Z" },
+    { "uid": 1007, "lat": 10.7540, "lng": 106.6640, "aqi": 121, "station": "Quận 5 — Trần Hưng Đạo", "time": "2026-08-10T01:00:00.000Z" },
+    { "uid": 1008, "lat": 10.7215, "lng": 106.6320, "aqi": 103, "station": "Quận 8 — Phạm Thế Hiển", "time": "2026-08-10T01:00:00.000Z" }
+  ],
+  "current": {
+    "aqi": 96,
+    "level": "Trung bình",
+    "dominantPollutant": "pm25",
+    "pm25": 34.2,
+    "pm10": 58.1,
+    "o3": 22.4,
+    "no2": 18.9,
+    "so2": 4.1,
+    "co": 6.2,
+    "temperature": 31.5,
+    "humidity": 72,
+    "wind": 2.4,
+    "station": "TP.HCM — Lãnh sự quán Hoa Kỳ",
+    "updated_at": "2026-08-10T01:00:00.000Z"
+  },
+  "history": [
+    { "date": "2026-08-04", "aqi": 82, "pm25": 27.4 },
+    { "date": "2026-08-05", "aqi": 90, "pm25": 31.0 },
+    { "date": "2026-08-06", "aqi": 118, "pm25": 42.6 },
+    { "date": "2026-08-07", "aqi": 105, "pm25": 37.8 },
+    { "date": "2026-08-08", "aqi": 76, "pm25": 24.9 },
+    { "date": "2026-08-09", "aqi": 112, "pm25": 40.1 },
+    { "date": "2026-08-10", "aqi": 96, "pm25": 34.2 }
+  ],
+  "ranking": [
+    { "rank": 1, "city": "Hà Nội", "country": "VN", "aqi": 168 },
+    { "rank": 2, "city": "TP. Hồ Chí Minh", "country": "VN", "aqi": 96 },
+    { "rank": 3, "city": "Đà Nẵng", "country": "VN", "aqi": 58 },
+    { "rank": 4, "city": "Hải Phòng", "country": "VN", "aqi": 74 },
+    { "rank": 5, "city": "Cần Thơ", "country": "VN", "aqi": 61 },
+    { "rank": 6, "city": "Biên Hòa", "country": "VN", "aqi": 132 },
+    { "rank": 7, "city": "Nha Trang", "country": "VN", "aqi": 45 },
+    { "rank": 8, "city": "Huế", "country": "VN", "aqi": 52 }
+  ]
+}

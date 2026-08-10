@@ -1,0 +1,48 @@
+name: Verify & Build Frontend for Vercel
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'FE/**'
+      - '.github/workflows/deploy-fe.yml'
+  workflow_dispatch:
+
+jobs:
+  verify-and-build:
+    name: Typecheck & Build FE Production Bundle
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'FE/package-lock.json'
+
+      - name: Install Frontend Dependencies
+        run: |
+          cd FE
+          npm ci
+
+      - name: Validate TypeScript Compilation
+        run: |
+          cd FE
+          npx tsc --noEmit
+
+      - name: Build Production Assets
+        env:
+          VITE_API_URL: "https://136-110-49-135.sslip.io/api"
+        run: |
+          cd FE
+          npm run build
+
+      - name: Verify Build Artifacts
+        run: |
+          ls -la FE/dist
+          echo "FE Production Build Successful!"

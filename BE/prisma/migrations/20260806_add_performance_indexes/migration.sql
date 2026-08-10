@@ -10,11 +10,10 @@ CREATE INDEX IF NOT EXISTS community_reports_lat_lng_brin_idx
   WITH (pages_per_range = 32);
 
 -- 2. Compound index tối ưu thứ tự cột: expires_at (filter đầu tiên) → lat, lng (range scan)
---    Index hiện tại (expires_at, lat, lng) đúng thứ tự nhưng tạo thêm partial index
---    chỉ cho records chưa expired để index nhỏ hơn và scan nhanh hơn.
+--    LƯU Ý: KHÔNG dùng partial index với NOW() — predicate của index bắt buộc phải
+--    IMMUTABLE, mà NOW() là STABLE nên Postgres sẽ báo lỗi. Dùng index thường.
 CREATE INDEX IF NOT EXISTS community_reports_active_geo_idx
-  ON community_reports (expires_at, lat, lng)
-  WHERE expires_at > NOW() - INTERVAL '7 days';
+  ON community_reports (expires_at, lat, lng);
 
 -- 3. Index cho user_live_contexts.snapshot_updated_at (dùng khi query snapshot mới nhất)
 CREATE INDEX IF NOT EXISTS user_live_contexts_snapshot_idx

@@ -1,36 +1,17 @@
 import { Injectable, ServiceUnavailableException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import Anthropic from '@anthropic-ai/sdk';
 import { fetchJson } from '../../common/cache.util';
 import { ChatDto, InsightDto } from './dto/ai.dto';
 
 /**
  * Thay 2 edge function ai-chat và ai-insight.
- * Mặc định dùng Anthropic; có thể đổi sang OpenAI/Gemini qua AI_PROVIDER.
+ * Chỉ dùng Google Gemini (GEMINI_API_KEY + GEMINI_MODEL).
  */
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
-  private anthropic?: Anthropic;
 
   constructor(private readonly config: ConfigService) {}
-
-  private get provider() {
-    return (this.config.get<string>('AI_PROVIDER') ?? 'anthropic').toLowerCase();
-  }
-
-  private getAnthropic(): Anthropic {
-    if (!this.anthropic) {
-      const apiKey = this.config.get<string>('ANTHROPIC_API_KEY');
-      if (!apiKey) {
-        throw new ServiceUnavailableException(
-          'Chưa cấu hình ANTHROPIC_API_KEY trong .env',
-        );
-      }
-      this.anthropic = new Anthropic({ apiKey });
-    }
-    return this.anthropic;
-  }
 
   // ---------- prompt ----------
 
@@ -99,61 +80,18 @@ Provide a brief analysis and actionable recommendation.`;
     return { system, user };
   }
 
-  // ---------- gọi model ----------
+  // ---------- gọi model (Gemini) ----------
 
   /**
-   * Câu trả lời ở đây đều ngắn (2-4 câu) nên không bật extended thinking
-   * và giữ max_tokens thấp để tiết kiệm chi phí + giảm độ trễ.
+   * Câu trả lời ở đây đều ngắn (2-4 câu) nên giữ maxOutputTokens thấp để
+   * tiết kiệm chi phí + giảm độ trễ.
    */
-  private async completeWithAnthropic(
-    system: string,
-    messages: { role: 'user' | 'assistant'; content: string }[],
-  ): Promise<string> {
-    const model = this.config.get<string>('ANTHROPIC_MODEL') ?? 'claude-opus-4-8';
-
-    const response = await this.getAnthropic().messages.create({
-      model,
-      max_tokens: 1024,
-      system,
-      messages,
-    });
-
-    return response.content
-      .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-      .map((block) => block.text)
-      .join('')
-      .trim();
-  }
-
-  private async completeWithOpenAi(
-    system: string,
-    messages: { role: 'user' | 'assistant'; content: string }[],
-  ): Promise<string> {
-    const apiKey = this.config.get<string>('OPENAI_API_KEY');
-    if (!apiKey) throw new ServiceUnavailableException('Chưa cấu hình OPENAI_API_KEY');
-
-    const data = await fetchJson<any>(
-      'https://api.openai.com/v1/chat/completions',
-      30000,
-      {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: this.config.get<string>('OPENAI_MODEL') ?? 'gpt-4o-mini',
-          max_tokens: 1024,
-          messages: [{ role: 'system', content: system }, ...messages],
-        }),
-      },
-    );
-    return data.choices?.[0]?.message?.content?.trim() ?? '';
-  }
-
-  private async completeWithGemini(
+  private async complete(
     system: string,
     messages: { role: 'user' | 'assistant'; content: string }[],
   ): Promise<string> {
     const apiKey = this.config.get<string>('GEMINI_API_KEY');
-    if (!apiKey) throw new ServiceUnavailableException('Chưa cấu hình GEMINI_API_KEY');
+    if (!apiKey) throw new ServiceUnavailableException('Chưa cấu hình GEMINI_API_KEY trong .env');
 
     const model = this.config.get<string>('GEMINI_MODEL') ?? 'gemini-2.0-flash';
     const data = await fetchJson<any>(
@@ -175,32 +113,17 @@ Provide a brief analysis and actionable recommendation.`;
     return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
   }
 
-  private complete(
-    system: string,
-    messages: { role: 'user' | 'assistant'; content: string }[],
-  ): Promise<string> {
-    switch (this.provider) {
-      case 'openai':
-        return this.completeWithOpenAi(system, messages);
-      case 'gemini':
-        return this.completeWithGemini(system, messages);
-      case 'anthropic':
-      default:
-        return this.completeWithAnthropic(system, messages);
-    }
-  }
-
   // ---------- public ----------
 
   async chat(dto: ChatDto) {
     const history = dto.messages.slice(-12); // giới hạn ngữ cảnh gửi lên model
     const reply = await this.complete(this.chatSystemPrompt(dto), history);
-    return { reply, provider: this.provider };
+    return { reply, provider: 'gemini' };
   }
 
   async insight(dto: InsightDto) {
     const { system, user } = this.insightPrompts(dto);
     const insight = await this.complete(system, [{ role: 'user', content: user }]);
-    return { insight, provider: this.provider };
+    return { insight, provider: 'gemini' };
   }
 }

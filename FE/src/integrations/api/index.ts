@@ -265,6 +265,7 @@ export const configApi = {
 
 export const nodesApi = {
   adminStats: () => api.get<any>('/nodes/admin/stats'),
+  alertStatus: () => api.get<{ co2Ppm: number; uvIndex: number; pushConfigured: boolean; smsConfigured: boolean; aqiBroadcastConfigured: boolean; vocConfigured: boolean }>('/nodes/admin/alerts/status'),
   simulatorStatus: () => api.get<{ isSimulating: boolean }>('/nodes/admin/simulator/status'),
   toggleSimulator: () => api.post<{ isSimulating: boolean }>('/nodes/admin/simulator/toggle'),
 
@@ -290,6 +291,7 @@ export const nodesApi = {
     lng: number;
     location_name?: string;
     hardware_ver?: string;
+    edition?: 'outdoor_solar' | 'indoor_grid';
   }) => api.post<any>('/nodes/create', payload),
   assignNodeToOrg: (nodeId: string, orgId: string) =>
     api.patch<any>(`/nodes/assign/${nodeId}/org/${orgId}`),

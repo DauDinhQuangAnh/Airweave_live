@@ -21,7 +21,7 @@ interface StationLike {
   lng: number;
   aqi: number;
   station?: string | null;
-  time?: unknown;
+  time?: string | null;
 }
 
 function ageMinutes(iso: string): number {
@@ -57,15 +57,17 @@ export const hotspotIntelligenceService = {
       );
       const newest = sorted[0];
       const oldest = sorted[sorted.length - 1];
-      const nearbyStation = stations.find(
-        (s) => toGridCellId(s.lat, s.lng) === cell && s.aqi >= 150
+      const nearbyStation = stations.find((s) =>
+        toGridCellId(s.lat, s.lng) === cell && s.aqi >= 150 &&
+        !!s.time && Number.isFinite(Date.parse(s.time)) &&
+        ageMinutes(s.time) >= 0 && ageMinutes(s.time) <= 120
       );
       const signals = sorted.map((r) => ({
         source: 'community_report' as HotspotSourceType,
         ageMinutes: ageMinutes(r.created_at),
       }));
       if (nearbyStation) {
-        signals.push({ source: 'station_data', ageMinutes: 5, aqi: nearbyStation.aqi } as never);
+        signals.push({ source: 'station_data', ageMinutes: ageMinutes(nearbyStation.time!), aqi: nearbyStation.aqi } as never);
       }
       const confidence = scoreConfidence(signals as never);
       const sourceType: HotspotSourceType = nearbyStation
@@ -85,12 +87,7 @@ export const hotspotIntelligenceService = {
         sourceType,
         sourceLabel,
         confidence,
-        status:
-          nearbyStation && group.length >= 2
-            ? 'verified'
-            : group.length >= 2
-            ? 'community_detected'
-            : 'pending',
+        status: group.length >= 2 ? 'community_detected' : 'pending',
         timestamp: oldest.created_at,
         lastUpdated: newest.created_at,
         description: newest.text ?? undefined,
@@ -102,7 +99,7 @@ export const hotspotIntelligenceService = {
 
     // Standalone station anomalies (not already covered by community cluster)
     for (const s of stations) {
-      if (s.aqi < 200) continue;
+      if (s.aqi < 200 || !s.time || !Number.isFinite(Date.parse(s.time)) || ageMinutes(s.time) > 120) continue;
       const cell = toGridCellId(s.lat, s.lng);
       if (events.some((e) => e.location.gridCellId === cell)) continue;
       events.push({
@@ -112,11 +109,11 @@ export const hotspotIntelligenceService = {
         sourceType: 'station_data',
         sourceLabel: s.station ? `WAQI · ${s.station}` : 'WAQI station',
         confidence: s.aqi >= 300 ? 'high' : 'medium',
-        status: 'community_detected',
-        timestamp: new Date().toISOString(),
-        lastUpdated: new Date().toISOString(),
+        status: 'pending',
+        timestamp: s.time,
+        lastUpdated: s.time,
         description: `AQI ${s.aqi}`,
-        confirmationsCount: 1,
+        confirmationsCount: 0,
         isDemo: false,
         privacyLevel: 'aggregated_data',
       });

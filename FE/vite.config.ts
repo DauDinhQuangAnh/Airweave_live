@@ -16,11 +16,11 @@ export default defineConfig(() => ({
     // -> chạy được qua ngrok/điện thoại mà không vướng CORS.
     proxy: {
       "/api": {
-        target: "http://localhost:4100",
+        target: "http://localhost:3000",
         changeOrigin: true,
       },
       "/socket.io": {
-        target: "http://localhost:4100",
+        target: "http://localhost:3000",
         changeOrigin: true,
         ws: true,
       },

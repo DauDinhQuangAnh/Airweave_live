@@ -1,3 +1,5 @@
+import { isDemoMode } from '@/lib/demo/demo-mode';
+
 /**
  * AirWeave global app-mode configuration.
  *
@@ -14,7 +16,9 @@
 
 export const APP_MODE = 'prototype' as const;
 export const PRIVACY_MODE = 'lightweight' as const;
-export const USE_DEMO_DATA = true;
+
+/** Demo data must follow the active session; real accounts never receive it. */
+export const shouldUseDemoData = () => isDemoMode();
 
 export const isPrototype = () => APP_MODE === 'prototype';
 export const isLightweightPrivacy = () => PRIVACY_MODE === 'lightweight';

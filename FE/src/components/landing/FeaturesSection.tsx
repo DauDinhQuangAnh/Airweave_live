@@ -1,13 +1,14 @@
 import { motion, useInView } from 'framer-motion';
 import { useRef } from 'react';
+import { useAppLang } from '@/hooks/use-app-lang';
 
 const features = [
-  { icon: '🗺️', title: 'Lộ trình Sạch', desc: 'Thuật toán Smart Route tìm đường ít bụi mịn PM2.5 nhất — không phải đường nhanh nhất. Lý tưởng cho 60 triệu người đi xe máy.', tag: 'Smart Route', glow: '#00d4aa' },
-  { icon: '📍', title: 'Bản đồ Vi vùng', desc: 'Hyper-local Geofencing chia bản đồ thành ô lưới siêu nhỏ. Biết chính xác chất lượng không khí tại từng phường, từng ngõ bạn đang đứng.', tag: 'Hyper-local', glow: '#0ea5e9' },
-  { icon: '🔥', title: 'Heatmap Cộng đồng', desc: 'Crowdsourcing real-time: người dân báo cáo điểm đốt rác, khói bụi công trình, kẹt xe. AI phân tích và hiển thị bản đồ ô nhiễm sống ngay lập tức.', tag: 'Crowdsourced', glow: '#7c3aed' },
-  { icon: '🤖', title: 'Trợ lý AI Cá nhân', desc: "AI phân tích hồ sơ sức khỏe của bạn (hen suyễn, COPD, trẻ nhỏ) và đưa ra lời khuyên cụ thể: 'Dời lịch chạy bộ sang 9h sáng.'", tag: 'AI-powered', glow: '#f59e0b' },
-  { icon: '🔔', title: 'Cảnh báo Cá nhân hóa', desc: 'Push notification thông minh dựa trên thói quen sinh hoạt. Chỉ cảnh báo khi thực sự cần — không spam, không bỏ sót.', tag: 'Personalized', glow: '#ec4899' },
-  { icon: '🏠', title: 'Smart Home Integration', desc: 'Tự động bật máy lọc không khí (Xiaomi, Panasonic, Dyson) khi app phát hiện AQI ngoài trời vượt ngưỡng nguy hiểm.', tag: 'Tương lai gần', glow: '#22c55e' },
+  { icon: '🗺️', title: ['Lộ trình Sạch', 'Smart Route'], desc: ['So sánh lộ trình theo dữ liệu ô nhiễm hiện có và xem nguồn.', 'Compare routes using available pollution data and inspect sources.'], tag: 'Smart Route', glow: '#00d4aa' },
+  { icon: '📍', title: ['Bản đồ Chất lượng Không khí', 'Air Quality Map'], desc: ['Xem trạm công khai và cảm biến đã kết nối. Vùng thiếu dữ liệu được đánh dấu rõ.', 'View public stations and connected sensors. Areas without data are marked clearly.'], tag: 'AQI Map', glow: '#0ea5e9' },
+  { icon: '🔥', title: ['Báo cáo Cộng đồng', 'Community Reports'], desc: ['Gửi và xem báo cáo do người dùng cung cấp; cần kiểm chứng độc lập.', 'Submit and view user reports; independent verification is still needed.'], tag: 'Community', glow: '#7c3aed' },
+  { icon: '🤖', title: ['Trợ lý AI', 'AI Assistant'], desc: ['Hỏi đáp theo ngữ cảnh không khí hiện có; không thay thế tư vấn y tế.', 'Ask about available air data; AI does not replace medical advice.'], tag: 'AI', glow: '#f59e0b' },
+  { icon: '🔔', title: ['Cảnh báo theo ngưỡng', 'Threshold Alerts'], desc: ['Nhận cảnh báo trong ứng dụng khi AQI mới vượt ngưỡng đã cài.', 'Get in-app alerts when a fresh AQI reading exceeds your threshold.'], tag: 'Alerts', glow: '#ec4899' },
+  { icon: '🏠', title: ['Tích hợp Nhà thông minh', 'Smart Home Integration'], desc: ['Định hướng phát triển; chưa có kết nối điều khiển máy lọc.', 'Planned only; air purifier controls are not connected.'], tag: ['Chưa triển khai', 'Not available'], glow: '#22c55e' },
 ];
 
 const containerVariants = {
@@ -31,6 +32,8 @@ const headerVariants = {
 };
 
 const FeaturesSection = () => {
+  const lang = useAppLang();
+  const index = lang === 'vi' ? 0 : 1;
   const headerRef = useRef(null);
   const gridRef = useRef(null);
   const headerInView = useInView(headerRef, { once: true, margin: '-80px' });
@@ -45,9 +48,9 @@ const FeaturesSection = () => {
         animate={headerInView ? 'show' : 'hidden'}
         className="text-center mb-8 md:mb-12"
       >
-        <span className="text-xs font-body font-medium text-[#00d4aa] tracking-widest uppercase mb-3 block">Tính năng cốt lõi</span>
+        <span className="text-xs font-body font-medium text-[#00d4aa] tracking-widest uppercase mb-3 block">{lang === 'vi' ? 'Tính năng cốt lõi' : 'Core features'}</span>
         <h2 className="font-heading text-2xl md:text-4xl font-extrabold text-foreground tracking-[-1px] leading-tight">
-          Không chỉ báo số —<br />chúng tôi hướng dẫn hành động
+          {lang === 'vi' ? <>Không chỉ báo số —<br />chúng tôi hướng dẫn hành động</> : <>More than a number —<br />information you can act on</>}
         </h2>
       </motion.div>
 
@@ -73,10 +76,10 @@ const FeaturesSection = () => {
               >
                 {f.icon}
               </div>
-              <h3 className="font-heading text-base md:text-lg font-bold text-foreground mb-2">{f.title}</h3>
-              <p className="text-sm font-body text-muted-foreground leading-relaxed mb-4">{f.desc}</p>
+              <h3 className="font-heading text-base md:text-lg font-bold text-foreground mb-2">{f.title[index]}</h3>
+              <p className="text-sm font-body text-muted-foreground leading-relaxed mb-4">{f.desc[index]}</p>
               <span className="inline-block px-3 py-1 rounded-full text-[10px] font-body font-medium border border-border text-muted-foreground">
-                {f.tag}
+                {typeof f.tag === 'string' ? f.tag : f.tag[index]}
               </span>
             </div>
           </motion.div>

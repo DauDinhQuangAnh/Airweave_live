@@ -7,7 +7,9 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import GeoPrewarm from "./components/GeoPrewarm";
 import DemoModeBanner from "./components/DemoModeBanner";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { Loader2 } from "lucide-react";
+import { getStoredLanguage } from "@/lib/language";
 
 const Landing = lazy(() => import("./pages/Landing.tsx"));
 const Auth = lazy(() => import("./pages/Auth.tsx"));
@@ -51,15 +53,18 @@ const queryClient = new QueryClient({
   },
 });
 
-const PageFallback = () => (
+const PageFallback = () => {
+  const lang = getStoredLanguage();
+  return (
   <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-background text-foreground">
     <Loader2 className="w-8 h-8 animate-spin text-primary" />
     <div className="text-center">
       <p className="font-heading text-sm font-bold">AirWeave</p>
-      <p className="text-xs text-muted-foreground">Loading...</p>
+      <p className="text-xs text-muted-foreground">{lang === 'vi' ? 'Đang tải...' : 'Loading...'}</p>
     </div>
   </div>
-);
+  );
+};
 
 const AdminLayout = lazy(() => import("./components/admin/AdminLayout.tsx"));
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard.tsx"));
@@ -86,21 +91,34 @@ const App = () => (
               <Route path="/onboarding" element={<Onboarding />} />
               <Route path="/qr/:token" element={<MedicalQR />} />
               <Route path="/medical-id-demo" element={<MedicalIDDemo />} />
-              <Route path="/org-dashboard" element={<OrgDashboard />} />
-
-              {/* IoT Admin Portal */}
-              <Route path="/admin" element={<AdminLayout />}>
-                <Route index element={<AdminDashboard />} />
-                <Route path="nodes" element={<AdminNodesManager />} />
-                <Route path="orgs" element={<AdminOrgsManager />} />
-                <Route path="alerts" element={<AdminAlertsManager />} />
-                <Route path="api-keys" element={<AdminApiKeysManager />} />
-              </Route>
-
               {/* Protected app routes with sidebar */}
               <Route element={<AppLayout />}>
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/map" element={<AirMap />} />
+                <Route path="/org-dashboard" element={<OrgDashboard />} />
+
+                {/* IoT Admin Portal */}
+                <Route path="/admin" element={<AdminLayout />}>
+                  <Route index element={<AdminDashboard />} />
+                  <Route path="nodes" element={<AdminNodesManager />} />
+                  <Route path="orgs" element={<AdminOrgsManager />} />
+                  <Route path="alerts" element={<AdminAlertsManager />} />
+                  <Route path="api-keys" element={<AdminApiKeysManager />} />
+                </Route>
+                <Route
+                  path="/dashboard"
+                  element={
+                    <ErrorBoundary fallbackTitle={getStoredLanguage() === 'vi' ? 'Lỗi tải Bảng điều khiển' : 'Dashboard failed to load'}>
+                      <Dashboard />
+                    </ErrorBoundary>
+                  }
+                />
+                <Route
+                  path="/map"
+                  element={
+                    <ErrorBoundary fallbackTitle={getStoredLanguage() === 'vi' ? 'Lỗi tải Bản đồ AQI' : 'AQI map failed to load'}>
+                      <AirMap />
+                    </ErrorBoundary>
+                  }
+                />
                 <Route path="/smart-route" element={<SmartRoute />} />
                 <Route path="/sos" element={<SOS />} />
                 <Route path="/health-profile" element={<HealthProfile />} />

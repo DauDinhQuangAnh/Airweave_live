@@ -1,3 +1,4 @@
+import { shouldUseDemoData } from '@/lib/app-mode';
 /**
  * Route scoring helpers — confidence-weighted PM2.5 adjustment for Smart Route.
  *
@@ -124,11 +125,14 @@ function osmKey(lat: number, lng: number) {
 }
 
 export async function fetchOsmTags(lat: number, lng: number): Promise<OsmTagSummary> {
+  if (shouldUseDemoData()) {
+    return { hasParkOrWater: Math.sin(lat * 100) > 0.3, hasMajorRoad: Math.cos(lng * 100) > 0.2 };
+  }
   const k = osmKey(lat, lng);
   const hit = osmCache.get(k);
   if (hit && Date.now() - hit.t < OSM_TTL_MS) return hit.v;
 
-  const query = `[out:json][timeout:8];
+  const query = `[out:json][timeout:3];
 (
   way(around:200,${lat},${lng})[leisure=park];
   way(around:200,${lat},${lng})[natural=water];
@@ -137,10 +141,14 @@ export async function fetchOsmTags(lat: number, lng: number): Promise<OsmTagSumm
 out tags 30;`;
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
     const res = await fetch('https://overpass-api.de/api/interpreter', {
       method: 'POST',
       body: 'data=' + encodeURIComponent(query),
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
     if (!res.ok) throw new Error('overpass ' + res.status);
     const data = await res.json();
     const elements = (data.elements as any[]) || [];

@@ -12,6 +12,8 @@ import { toast } from 'sonner';
 import { trackBehavior } from '@/lib/behavior-analytics';
 import { setConsent } from '@/lib/privacy-consent';
 import { INLINE_NOTICES } from '@/lib/app-mode';
+import { hasAirQualityReading } from '@/lib/air-quality';
+import { hasWeatherMetric } from '@/hooks/use-weather-data';
 
 export default function SOSButton({ lang: propLang }: { lang?: 'vi' | 'en' }) {
   const contextLang = useAppLang();
@@ -27,18 +29,21 @@ export default function SOSButton({ lang: propLang }: { lang?: 'vi' | 'en' }) {
   const [activating, setActivating] = useState(false);
   const [confirmShare, setConfirmShare] = useState(false);
 
-  const hasGps = !!(location.lat && location.lng);
+  const hasGps = (location.status === 'active' || location.status === 'manual') &&
+    Number.isFinite(location.lat) && Number.isFinite(location.lng) &&
+    Math.abs(location.lat) <= 90 && Math.abs(location.lng) <= 180;
   const mapsLink = hasGps ? `https://www.google.com/maps?q=${location.lat},${location.lng}` : '';
-  const aqiText = weather.aqi ? `AQI ${weather.aqi}` : 'AQI unknown';
-  const medicalIdLink = `${window.location.origin}/medical-id-demo`;
+  const hasAqi = hasAirQualityReading(weather);
+  const aqiText = hasAqi ? `AQI ${weather.aqi}` : (lang === 'vi' ? 'Chưa có AQI mới' : 'No recent AQI');
+  const pm25Text = hasWeatherMetric(weather, 'pm25') ? `, PM2.5 ${Math.round(weather.pm25)} µg/m³` : '';
 
   const message = hasGps
     ? lang === 'vi'
-      ? `Tôi cần hỗ trợ hô hấp. Tôi đang ở khu vực có chất lượng không khí kém (${aqiText}${weather.pm25 ? `, PM2.5 ${Math.round(weather.pm25)}` : ''}).\nVị trí của tôi: ${mapsLink}\nMedical ID: ${medicalIdLink}`
-      : `I need respiratory assistance. I am in a poor air quality area (${aqiText}${weather.pm25 ? `, PM2.5 ${Math.round(weather.pm25)}` : ''}).\nMy Location: ${mapsLink}\nMedical ID: ${medicalIdLink}`
+      ? `Tôi cần hỗ trợ hô hấp. ${aqiText}${pm25Text}.\nVị trí tôi đã chia sẻ: ${mapsLink}`
+      : `I need respiratory assistance. ${aqiText}${pm25Text}.\nMy shared location: ${mapsLink}`
     : lang === 'vi'
-    ? `Tôi cần hỗ trợ hô hấp. Tôi không thể chia sẻ GPS tự động. Vui lòng liên hệ tôi để xác nhận vị trí.\nMedical ID: ${medicalIdLink}`
-    : `I need respiratory assistance. GPS auto-sharing is disabled. Please contact me to verify location.\nMedical ID: ${medicalIdLink}`;
+    ? 'Tôi cần hỗ trợ hô hấp. Tôi chưa thể chia sẻ vị trí; vui lòng liên hệ để xác nhận.'
+    : 'I need respiratory assistance. I cannot share my location yet; please contact me to confirm it.';
 
   const requestShare = () => {
     if (!hasGps) {
@@ -101,10 +106,10 @@ export default function SOSButton({ lang: propLang }: { lang?: 'vi' | 'en' }) {
     try {
       const event = await sosApi.trigger({
         profile_id: profiles[0].id,
-        lat: location.lat,
-        lng: location.lng,
-        aqi: weather.aqi || undefined,
-        pm25: weather.pm25 || undefined,
+        lat: hasGps ? location.lat : undefined,
+        lng: hasGps ? location.lng : undefined,
+        aqi: hasAqi ? weather.aqi : undefined,
+        pm25: hasWeatherMetric(weather, 'pm25') ? weather.pm25 : undefined,
       });
       setOpen(false);
       navigate(`/qr/${event.share_token}`);
@@ -117,11 +122,11 @@ export default function SOSButton({ lang: propLang }: { lang?: 'vi' | 'en' }) {
 
   return (
     <>
-      {/* Floating button */}
+      {/* Floating button — positioned above AI chatbot button (bottom-6) to prevent collision */}
       <button
         onClick={() => { trackBehavior('sos_opened'); setOpen(true); }}
         aria-label="AirWeave SOS"
-        className="fixed bottom-6 right-6 z-40 pointer-events-auto w-16 h-16 rounded-full flex flex-col items-center justify-center font-heading font-black text-sm select-none active:scale-95 transition-all shadow-xl border-2 border-white/40 dark:border-white/10 bg-gradient-to-br from-[#dc2626] to-[#991b1b] text-white hover:shadow-2xl hover:shadow-red-600/40"
+        className="fixed bottom-24 right-6 z-40 pointer-events-auto w-16 h-16 rounded-full flex flex-col items-center justify-center font-heading font-black text-sm select-none active:scale-95 transition-all shadow-xl border-2 border-white/40 dark:border-white/10 bg-gradient-to-br from-[#dc2626] to-[#991b1b] text-white hover:shadow-2xl hover:shadow-red-600/40"
       >
         <AlertTriangle className="w-5 h-5" />
         <span className="text-[11px] leading-none mt-0.5 tracking-wider">SOS</span>

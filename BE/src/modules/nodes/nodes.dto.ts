@@ -48,9 +48,13 @@ export class CreateIotNodeDto {
   organization_id?: string;
 
   @IsNumber()
+  @Min(-90)
+  @Max(90)
   lat: number;
 
   @IsNumber()
+  @Min(-180)
+  @Max(180)
   lng: number;
 
   @IsString()
@@ -60,6 +64,10 @@ export class CreateIotNodeDto {
   @IsString()
   @IsOptional()
   hardware_ver?: string;
+
+  @IsEnum(['outdoor_solar', 'indoor_grid'])
+  @IsOptional()
+  edition?: 'outdoor_solar' | 'indoor_grid';
 }
 
 export class IngestTelemetryDto {
@@ -144,10 +152,14 @@ export class AutoDiscoverNodeDto {
 
   @IsNumber()
   @IsOptional()
+  @Min(-90)
+  @Max(90)
   lat?: number;
 
   @IsNumber()
   @IsOptional()
+  @Min(-180)
+  @Max(180)
   lng?: number;
 }
 

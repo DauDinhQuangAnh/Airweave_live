@@ -232,6 +232,7 @@ model Organization {
   id          String   @id @default(uuid()) @db.Uuid
   name        String
   code        String   @unique
+  is_demo     Boolean  @default(false)
   type        String   @default("school") // school | hospital | office | factory | residential
   address     String?
   lat         Float?
@@ -264,20 +265,21 @@ model OrganizationUser {
 model IotNode {
   id              String   @id @default(uuid()) @db.Uuid
   chip_id         String   @unique
+  is_demo         Boolean  @default(false)
   name            String
   organization_id String?  @db.Uuid
   lat             Float
   lng             Float
   location_name   String?
-  status          String   @default("online") // online | offline | maintenance
-  battery         Int      @default(100) // 0 - 100%
-  rssi            Int      @default(-65) // Signal strength dBm
+  status          String   @default("offline") // online | offline | maintenance
+  battery         Int?     // 0 - 100%; unknown until reported by the device
+  rssi            Int?     // Signal strength dBm; unknown until reported
   edition         String   @default("outdoor_solar") // outdoor_solar | indoor_grid
   power_source    String   @default("solar") // solar | grid
-  hardware_ver    String   @default("ESP32-v2")
+  hardware_ver    String   @default("unknown")
   mqtt_topic      String?
 
-  last_seen_at    DateTime @default(now()) @db.Timestamptz(6)
+  last_seen_at    DateTime? @db.Timestamptz(6)
   created_at      DateTime @default(now()) @db.Timestamptz(6)
   updated_at      DateTime @updatedAt @db.Timestamptz(6)
 

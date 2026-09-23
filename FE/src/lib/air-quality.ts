@@ -1,4 +1,17 @@
-export type AirQualitySource = 'waqi' | 'open-meteo';
+export type AirQualitySource = 'waqi' | 'open-meteo' | 'demo';
+
+/** A zero-filled initial state is not an air-quality observation. */
+export function hasAirQualityReading(reading: {
+  aqi: number;
+  updatedAt: string;
+  loading: boolean;
+  error: string | null;
+}): boolean {
+  const observedAt = Date.parse(reading.updatedAt);
+  return !reading.loading && !reading.error && !!reading.updatedAt &&
+    Number.isFinite(reading.aqi) && reading.aqi >= 0 &&
+    Number.isFinite(observedAt) && observedAt <= Date.now() + 5 * 60_000 && Date.now() - observedAt <= 2 * 60 * 60_000;
+}
 
 export function pm25ToAQI(pm25: number): number {
   const breakpoints = [
@@ -58,6 +71,7 @@ export function getAQIStatus(aqi: number, lang: 'vi' | 'en' = 'vi'): string {
 }
 
 export function formatAirQualitySource(source: AirQualitySource, lang: 'vi' | 'en' = 'vi'): string {
+  if (source === 'demo') return lang === 'vi' ? 'Dữ liệu mô phỏng' : 'Simulated data';
   if (source === 'waqi') return 'WAQI · trạm đo thật';
   return lang === 'vi' ? 'Open-Meteo · ước tính theo tọa độ' : 'Open-Meteo · coordinate estimate';
 }

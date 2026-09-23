@@ -8,6 +8,10 @@ import { trackBehavior } from '@/lib/behavior-analytics';
 import { useAppLang } from '@/hooks/use-app-lang';
 import { profilesApi, preferencesApi, medicalApi } from '@/integrations/api';
 import { toast } from 'sonner';
+import { hasAirQualityReading } from '@/lib/air-quality';
+import { isDemoMode } from '@/lib/demo/demo-mode';
+import { getConditionLabel } from '@/lib/sos-conditions';
+import { localizeDemoText } from '@/lib/localize-demo';
 
 export default function MedicalIDDemo({ lang: propLang }: { lang?: 'vi' | 'en' }) {
   const contextLang = useAppLang();
@@ -30,7 +34,7 @@ export default function MedicalIDDemo({ lang: propLang }: { lang?: 'vi' | 'en' }
   let label = '—';
   try {
     const ctx = useLiveAirContext();
-    aqi = ctx.weather.aqi ?? null;
+    aqi = hasAirQualityReading(ctx.weather) ? ctx.weather.aqi : null;
     label = ctx.location.label ?? '—';
   } catch {
     /* outside provider */
@@ -41,15 +45,15 @@ export default function MedicalIDDemo({ lang: propLang }: { lang?: 'vi' | 'en' }
       const [p, pref, med] = await Promise.all([
         profilesApi.me().catch(() => null),
         preferencesApi.get().catch(() => null),
-        medicalApi.listProfiles().catch(() => []),
+        medicalApi.listProfilesWithConditions().catch(() => []),
       ]);
       setRealProfile(p);
       setRealPrefs(pref);
       if (p?.display_name) setName(p.display_name);
-      if (p?.phone) setPhone(p.phone);
+      if (Array.isArray(med) && med.length > 0) setPhone(med.find((m) => m.relation === 'self')?.emergency_phone || '');
       if (p?.date_of_birth) setDob(String(p.date_of_birth).slice(0, 10));
       if (pref?.health_tier) setHealthTier(pref.health_tier);
-      if (Array.isArray(med) && med.length > 0) setRealMedical(med[0]);
+      setRealMedical(Array.isArray(med) ? med.find((m) => m.relation === 'self') ?? null : null);
     } catch {
       /* fallback */
     }
@@ -59,7 +63,7 @@ export default function MedicalIDDemo({ lang: propLang }: { lang?: 'vi' | 'en' }
     loadData();
   }, []);
 
-  const isEssentialComplete = !!(realProfile?.display_name && realProfile?.phone);
+  const isEssentialComplete = !!(realProfile?.display_name && realProfile?.date_of_birth && realMedical?.emergency_phone);
 
   const handleQuickActivate = async () => {
     if (!name.trim()) return toast.error(lang === 'vi' ? 'Vui lòng nhập Họ và tên' : 'Please enter Full Name');
@@ -70,9 +74,14 @@ export default function MedicalIDDemo({ lang: propLang }: { lang?: 'vi' | 'en' }
     try {
       await profilesApi.update({
         display_name: name.trim(),
-        phone: phone.trim(),
         date_of_birth: dob || undefined,
       });
+
+      if (realMedical?.id) {
+        await medicalApi.updateProfile(realMedical.id, { display_name: name.trim(), birth_year: Number(dob.slice(0, 4)), emergency_phone: phone.trim() });
+      } else {
+        await medicalApi.createProfile({ relation: 'self', display_name: name.trim(), birth_year: Number(dob.slice(0, 4)), emergency_phone: phone.trim() });
+      }
 
       await preferencesApi.upsert({
         ...(realPrefs || {}),
@@ -99,29 +108,21 @@ export default function MedicalIDDemo({ lang: propLang }: { lang?: 'vi' | 'en' }
   }
 
   // Medical conditions string
-  const userConditions =
-    realPrefs?.health_tier && realPrefs.health_tier.length > 0
-      ? realPrefs.health_tier
-          .map((k: string) => {
-            if (k === 'respiratory') return lang === 'vi' ? 'Bệnh hô hấp (Hen suyễn / Viêm mũi)' : 'Respiratory (Asthma / Rhinitis)';
-            if (k === 'elderly') return lang === 'vi' ? 'Cao tuổi' : 'Elderly';
-            if (k === 'children') return lang === 'vi' ? 'Trẻ em' : 'Child';
-            return lang === 'vi' ? 'Bản thân' : 'General Self';
-          })
-          .join(' · ')
-      : lang === 'vi'
-      ? 'Hen suyễn · Nguy cơ COPD (thử nghiệm)'
-      : 'Asthma · COPD risk profile (demo)';
+  const notProvided = lang === 'vi' ? 'Chưa cập nhật' : 'Not provided';
+  const conditions: Array<{ category: string; code: string; note: string | null }> = realMedical?.conditions ?? [];
+  const conditionLabel = (item: typeof conditions[number]) =>
+    localizeDemoText(item.note?.trim(), lang) || getConditionLabel(item.category, item.code, lang);
+  const userConditions = conditions.filter((item) => item.category === 'respiratory').map(conditionLabel).join(' · ') || notProvided;
 
   const displayData = {
     name: realProfile?.display_name || 'Demo User',
     age: userAge,
     condition: userConditions,
     emergency_name: realMedical?.emergency_name || (lang === 'vi' ? 'Người thân khẩn cấp' : 'Emergency Contact'),
-    emergency_phone: realProfile?.phone || realMedical?.emergency_phone || '+84 000 000 000',
-    allergies: lang === 'vi' ? 'Phấn hoa, Thuốc NSAID' : 'Pollen, NSAIDs',
-    medications: lang === 'vi' ? 'Bình xịt Salbutamol 100mcg' : 'Salbutamol inhaler 100mcg',
-    blood_type: realMedical?.blood_type || 'O+',
+    emergency_phone: realMedical?.emergency_phone || notProvided,
+    allergies: conditions.filter((item) => item.category === 'allergy').map(conditionLabel).join(' · ') || notProvided,
+    medications: notProvided,
+    blood_type: realMedical?.blood_type || notProvided,
   };
 
   const [coords, setCoords] = useState<string>(lang === 'vi' ? 'Chưa chia sẻ vị trí' : 'Location not shared');
@@ -254,13 +255,15 @@ export default function MedicalIDDemo({ lang: propLang }: { lang?: 'vi' | 'en' }
 
             {isEssentialComplete && (
               <Button
-                onClick={() => navigate('/sos')}
+                onClick={() => navigate(isDemoMode() ? '/qr/demo' : '/sos')}
                 variant="outline"
                 size="sm"
                 className="shrink-0 font-heading text-xs gap-1.5 border-sky-400/40 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20"
               >
                 <QrCode className="w-3.5 h-3.5" />
-                {lang === 'vi' ? 'Mở QR Bác sĩ' : 'Open Doctor QR'}
+                {isDemoMode()
+                  ? (lang === 'vi' ? 'Mở QR mẫu' : 'Open sample QR')
+                  : (lang === 'vi' ? 'Tạo QR qua SOS' : 'Create QR via SOS')}
               </Button>
             )}
           </div>
@@ -289,7 +292,7 @@ export default function MedicalIDDemo({ lang: propLang }: { lang?: 'vi' | 'en' }
           <Field label={lang === 'vi' ? 'TUỔI' : 'AGE'} value={displayData.age} />
           <Field label={lang === 'vi' ? 'NHÓM MÁU' : 'BLOOD TYPE'} value={displayData.blood_type} />
           <Field
-            label={lang === 'vi' ? 'TÌNH TRẠNG HÔ HẤP' : 'RESPIRATORY CONDITION'}
+            label={lang === 'vi' ? 'BỆNH LÝ HÔ HẤP ĐÃ KHAI' : 'REPORTED RESPIRATORY CONDITIONS'}
             value={displayData.condition}
             icon={<Wind className="w-4 h-4" />}
           />
@@ -342,8 +345,8 @@ export default function MedicalIDDemo({ lang: propLang }: { lang?: 'vi' | 'en' }
 
         <p className="text-[11px] text-muted-foreground text-center">
           {lang === 'vi'
-            ? 'Dữ liệu y tế được bảo mật trên thiết bị và chỉ hiển thị khi bạn kích hoạt SOS hoặc mở mã QR Bác sĩ.'
-            : 'Medical data is encrypted on device and revealed only upon SOS activation or Doctor QR creation.'}
+            ? 'Hồ sơ y tế được lưu trong tài khoản. Chỉ mở mã QR chia sẻ khi bạn muốn cho người khác xem thông tin này.'
+            : 'Medical data is stored in your account. Only open a shareable QR when you intend to show it to others.'}
         </p>
       </div>
     </div>

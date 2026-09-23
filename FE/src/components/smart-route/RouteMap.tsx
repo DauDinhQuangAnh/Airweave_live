@@ -3,15 +3,26 @@ import { MapContainer, TileLayer, Polyline, Marker, Circle, useMap } from 'react
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined;
+
+const tileUrl = MAPBOX_TOKEN
+  ? `https://api.mapbox.com/styles/v1/mapbox/dark-v11/tiles/256/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`
+  : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+
+const tileAttribution = MAPBOX_TOKEN
+  ? '&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a>'
+  : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+
 const greenIcon = new L.DivIcon({
   className: '',
-  html: `<div style="width:18px;height:18px;border-radius:50%;background:#22c55e;border:3px solid white;box-shadow:0 0 8px rgba(0,0,0,.3)"></div>`,
+  html: `<div style="width:18px;height:18px;border-radius:50%;background:#22c55e;border:3px solid white;box-shadow:0 0 8px rgba(0,0,0,.5)"></div>`,
   iconSize: [18, 18],
   iconAnchor: [9, 9],
 });
+
 const redIcon = new L.DivIcon({
   className: '',
-  html: `<div style="width:18px;height:18px;border-radius:50%;background:#ef4444;border:3px solid white;box-shadow:0 0 8px rgba(0,0,0,.3)"></div>`,
+  html: `<div style="width:18px;height:18px;border-radius:50%;background:#ef4444;border:3px solid white;box-shadow:0 0 8px rgba(0,0,0,.5)"></div>`,
   iconSize: [18, 18],
   iconAnchor: [9, 9],
 });
@@ -34,6 +45,8 @@ interface RouteMapProps {
   cleanSegments: RouteSegment[];
   fastGeo: { coordinates: [number, number][] } | null;
   dangerZones?: DangerZone[];
+  className?: string;
+  style?: React.CSSProperties;
 }
 
 function pm25Color(pm25: number): string {
@@ -47,12 +60,22 @@ function pm25Color(pm25: number): string {
 function FitBounds({ bounds }: { bounds: L.LatLngBoundsExpression | null }) {
   const map = useMap();
   useEffect(() => {
-    if (bounds) map.fitBounds(bounds, { padding: [40, 40] });
+    if (bounds) {
+      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+    }
   }, [bounds, map]);
   return null;
 }
 
-export default function RouteMap({ from, to, cleanSegments, fastGeo, dangerZones = [] }: RouteMapProps) {
+export default function RouteMap({
+  from,
+  to,
+  cleanSegments,
+  fastGeo,
+  dangerZones = [],
+  className = '',
+  style,
+}: RouteMapProps) {
   const fastLatLngs: L.LatLngTuple[] = useMemo(
     () => (fastGeo?.coordinates || []).map(([lng, lat]) => [lat, lng] as L.LatLngTuple),
     [fastGeo]
@@ -76,21 +99,27 @@ export default function RouteMap({ from, to, cleanSegments, fastGeo, dangerZones
   }, [segmentLatLngs, fastLatLngs]);
 
   return (
-    <div className="rounded-xl overflow-hidden border border-border relative" style={{ height: 320 }}>
+    <div
+      className={`rounded-2xl overflow-hidden border border-sky-500/20 relative shadow-xl bg-[#09111e] ${className}`}
+      style={{ minHeight: 480, height: '100%', ...style }}
+    >
       <MapContainer
         center={[from[1], from[0]]}
         zoom={13}
-        style={{ height: '100%', width: '100%' }}
+        style={{ height: '100%', width: '100%', minHeight: '100%' }}
         scrollWheelZoom={false}
       >
         <TileLayer
-          attribution='&copy; OpenStreetMap'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution={tileAttribution}
+          url={tileUrl}
+          tileSize={256}
+          zoomOffset={0}
+          maxZoom={19}
         />
         {fastLatLngs.length > 0 && (
           <Polyline
             positions={fastLatLngs}
-            pathOptions={{ color: '#94a3b8', weight: 4, opacity: 0.5, dashArray: '8 6' }}
+            pathOptions={{ color: '#94a3b8', weight: 4, opacity: 0.6, dashArray: '8 6' }}
           />
         )}
         {segmentLatLngs.map((seg, i) => (
@@ -105,32 +134,35 @@ export default function RouteMap({ from, to, cleanSegments, fastGeo, dangerZones
             key={`dz-${i}`}
             center={[dz.lat, dz.lng]}
             radius={300}
-            pathOptions={{ color: '#dc2626', fillColor: '#dc2626', fillOpacity: 0.25, weight: 2 }}
+            pathOptions={{ color: '#dc2626', fillColor: '#ef4444', fillOpacity: 0.35, weight: 2 }}
           />
         ))}
         <Marker position={[from[1], from[0]]} icon={greenIcon} />
         <Marker position={[to[1], to[0]]} icon={redIcon} />
         <FitBounds bounds={bounds} />
       </MapContainer>
-      {/* Legend */}
-      <div className="absolute bottom-2 left-2 z-[400] bg-background/90 backdrop-blur-sm rounded-lg px-2 py-1.5 text-[10px] font-body border border-border flex items-center gap-2 flex-wrap max-w-[calc(100%-1rem)]">
-        <span className="font-heading font-bold uppercase tracking-wider mr-1">PM2.5</span>
-        {[
-          { c: '#22c55e', l: '≤12' },
-          { c: '#eab308', l: '35' },
-          { c: '#f97316', l: '55' },
-          { c: '#ef4444', l: '150' },
-          { c: '#a855f7', l: '+' },
-        ].map((x) => (
-          <span key={x.c} className="flex items-center gap-1">
-            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: x.c }} />
-            {x.l}
-          </span>
-        ))}
+
+      {/* Modern Legend */}
+      <div className="absolute bottom-3 left-3 z-[400] bg-[#07111F]/90 backdrop-blur-md rounded-xl px-3 py-2 text-xs font-body border border-sky-500/25 shadow-lg flex items-center gap-2.5 flex-wrap max-w-[calc(100%-1.5rem)] text-slate-200">
+        <span className="font-heading font-bold text-sky-400">PM2.5:</span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#22c55e] inline-block shadow-sm" /> ≤12
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#eab308] inline-block shadow-sm" /> 35
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#f97316] inline-block shadow-sm" /> 55
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#ef4444] inline-block shadow-sm" /> 150
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#a855f7] inline-block shadow-sm" /> 150+
+        </span>
         {dangerZones.length > 0 && (
-          <span className="flex items-center gap-1 ml-1 text-destructive font-heading font-semibold">
-            <span className="w-2.5 h-2.5 rounded-full border-2 border-destructive" />
-            {dangerZones.length} cảnh báo
+          <span className="inline-flex items-center gap-1.5 border-l border-slate-700 pl-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#dc2626] border border-white inline-block shadow-sm" /> Cảnh báo
           </span>
         )}
       </div>

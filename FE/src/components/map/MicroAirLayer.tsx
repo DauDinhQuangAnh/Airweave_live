@@ -35,12 +35,12 @@ function popupHtml(point: MicroAirPoint, lang: 'vi' | 'en'): string {
       </div>
       <div style="font-size:12px;line-height:1.7;color:#334155">
         PM2.5: <b>${point.pm25.toFixed(1)}</b> µg/m³<br/>
-        PM10: <b>${point.pm10.toFixed(1)}</b> µg/m³<br/>
-        Nhiệt độ: <b>${point.temperature}</b>°C<br/>
-        Độ ẩm: <b>${point.humidity}</b>%<br/>
-        Gió: <b>${point.windSpeed}</b> km/h
+        PM10: <b>${point.pm10 === null ? '—' : point.pm10.toFixed(1)}</b> ${point.pm10 === null ? '' : 'µg/m³'}<br/>
+        ${lang === 'vi' ? 'Nhiệt độ' : 'Temperature'}: <b>${point.temperature ?? '—'}</b>${point.temperature === null ? '' : '°C'}<br/>
+        ${lang === 'vi' ? 'Độ ẩm' : 'Humidity'}: <b>${point.humidity ?? '—'}</b>${point.humidity === null ? '' : '%'}<br/>
+        ${lang === 'vi' ? 'Gió' : 'Wind'}: <b>${point.windSpeed ?? '—'}</b>${point.windSpeed === null ? '' : ' km/h'}
       </div>
-      <div style="font-size:10px;color:#64748b;margin-top:6px">Cập nhật ${escapeHtml(updated)}</div>
+      <div style="font-size:10px;color:#64748b;margin-top:6px">${lang === 'vi' ? 'Cập nhật' : 'Updated'} ${escapeHtml(updated)}</div>
     </div>
   `;
 }
@@ -99,7 +99,7 @@ export default function MicroAirLayer({ leafletMap, enabled, lang, badgeClassNam
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
       try {
         const [point] = await fetchMicroAirPoints([{ lat, lng }]);
-        if (!point) return;
+        if (!point) throw new Error('micro_air_unavailable');
         if (popupRef.current) {
           try { map.removeLayer(popupRef.current); } catch {}
         }

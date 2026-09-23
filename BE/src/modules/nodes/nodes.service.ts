@@ -2,6 +2,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  BadRequestException,
   ConflictException,
   OnModuleInit,
   OnModuleDestroy,
@@ -17,6 +18,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { calculateAqiFromPm25, applyHumidityCorrection } from '../../common/air-analytics.util';
 import { REDIS_CLIENT } from '../../common/redis.module';
+import type { JwtUser } from '../../common/decorators/current-user.decorator';
 import {
   CreateOrganizationDto,
   CreateIotNodeDto,
@@ -81,7 +83,6 @@ const SEED_NODES: SeedNode[] = [
 ];
 
 
-const HANOI = { lat: 21.0285, lng: 105.8542 };
 const LEADER_KEY = 'airweave:iot:simulator:leader';
 
 // Prisma include dùng lại: node kèm bản đo mới nhất + tên tổ chức.
@@ -100,6 +101,8 @@ export class NodesService implements OnModuleInit, OnModuleDestroy {
   private simulationInterval: NodeJS.Timeout | null = null;
   private readonly intervalMs: number;
   private readonly simulatorEnabled: boolean;
+  private readonly demoDataEnabled: boolean;
+  private readonly nodeStaleMs: number;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -108,14 +111,19 @@ export class NodesService implements OnModuleInit, OnModuleDestroy {
     @Optional() @Inject(REDIS_CLIENT) private readonly redis: Redis | null,
   ) {
     this.intervalMs = Number(this.config.get('IOT_SIMULATOR_INTERVAL_MS')) || 15_000;
-    // Mặc định bật ở dev; production nên đặt IOT_SIMULATOR_ENABLED=false và dùng ESP32 thật.
-    this.simulatorEnabled = (this.config.get<string>('IOT_SIMULATOR_ENABLED') ?? 'true') !== 'false';
+    // Synthetic telemetry must be explicitly enabled; never present it as live by default.
+    this.simulatorEnabled = this.config.get<string>('IOT_SIMULATOR_ENABLED') === 'true';
+    this.demoDataEnabled = this.config.get<string>('IOT_DEMO_SEED_ENABLED') === 'true';
+    const configuredStaleMs = Number(this.config.get('IOT_NODE_STALE_MS'));
+    this.nodeStaleMs = Number.isFinite(configuredStaleMs) && configuredStaleMs > 0 ? configuredStaleMs : 5 * 60_000;
   }
 
   async onModuleInit() {
     let dbReady = true;
     try {
-      await this.seedIfEmpty();
+      if (this.demoDataEnabled) {
+        await this.seedIfEmpty();
+      }
     } catch (err) {
       dbReady = false;
       this.logger.error(
@@ -137,12 +145,13 @@ export class NodesService implements OnModuleInit, OnModuleDestroy {
 
     this.logger.log('Seed dữ liệu IoT mẫu vào DB (lần đầu)...');
     for (const org of SEED_ORGS) {
-      const created = await this.prisma.organization.create({ data: org });
+      const created = await this.prisma.organization.create({ data: { ...org, is_demo: true } });
       const nodes = SEED_NODES.filter((n) => n.org === created.code);
       for (const n of nodes) {
         const node = await this.prisma.iotNode.create({
           data: {
             chip_id: n.chip_id,
+            is_demo: true,
             name: n.name,
             organization_id: created.id,
             lat: n.lat,
@@ -168,7 +177,7 @@ export class NodesService implements OnModuleInit, OnModuleDestroy {
   // ---------- SIMULATION ENGINE ----------
 
   startSimulator() {
-    if (this.simulationInterval) return;
+    if (!this.simulatorEnabled || this.simulationInterval) return;
     this.isSimulating = true;
     this.logger.log(`🚀 IoT Telemetry Simulator bật (mỗi ${this.intervalMs}ms, instance ${this.instanceId.slice(0, 8)})`);
     this.simulationInterval = setInterval(() => {
@@ -196,6 +205,10 @@ export class NodesService implements OnModuleInit, OnModuleDestroy {
     return { isSimulating: this.isSimulating, simulatorEnabled: this.simulatorEnabled };
   }
 
+  getAlertStatus() {
+    return this.notificationsService.getIotAlertStatus();
+  }
+
   /** Đảm bảo chỉ MỘT instance chạy simulator (tránh ghi trùng khi scale nhiều pod). */
   private async acquireLeader(): Promise<boolean> {
     if (!this.redis) return true; // single instance / không có Redis
@@ -219,7 +232,7 @@ export class NodesService implements OnModuleInit, OnModuleDestroy {
     if (!(await this.acquireLeader())) return;
 
     const nodes = await this.prisma.iotNode.findMany({
-      where: { status: { not: 'offline' } },
+      where: { is_demo: true, status: { not: 'offline' } },
       include: NODE_WITH_LATEST,
     });
 
@@ -272,20 +285,34 @@ export class NodesService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Làm phẳng node + bản đo mới nhất về đúng shape mà FE đang dùng. */
+  private isFresh(date: Date | null | undefined): boolean {
+    if (!date) return false;
+    const ageMs = Date.now() - date.getTime();
+    return ageMs >= -5 * 60_000 && ageMs <= this.nodeStaleMs;
+  }
+
+  private isNodeOnline(node: NodeWithLatest): boolean {
+    return node.status === 'online' && this.isFresh(node.last_seen_at) && this.isFresh(node.telemetry[0]?.recorded_at);
+  }
+
   private shapeNode(node: NodeWithLatest) {
     const t = node.telemetry[0];
+    const isOnline = this.isNodeOnline(node);
+    const current = isOnline ? t : null;
     const { telemetry, organization, ...rest } = node;
     return {
       ...rest,
+      status: node.status === 'maintenance' ? 'maintenance' : isOnline ? 'online' : 'offline',
+      edition_type: rest.edition === 'indoor_grid' ? 'indoor' : 'outdoor',
       organization_name: organization?.name ?? 'Tự do (Chưa gán)',
-      pm25: t?.pm25 ?? null,
-      pm10: t?.pm10 ?? null,
-      aqi: t?.aqi ?? null,
-      temperature: t?.temperature ?? null,
-      humidity: t?.humidity ?? null,
-      uv_index: t?.uv_index ?? null,
-      co2: t?.co2 ?? null,
-      voc_index: t?.voc_index ?? null,
+      pm25: current?.pm25 ?? null,
+      pm10: current?.pm10 ?? null,
+      aqi: current?.aqi ?? null,
+      temperature: current?.temperature ?? null,
+      humidity: current?.humidity ?? null,
+      uv_index: current?.uv_index ?? null,
+      co2: current?.co2 ?? null,
+      voc_index: current?.voc_index ?? null,
       last_reading_at: t?.recorded_at ?? null,
     };
   }
@@ -294,18 +321,18 @@ export class NodesService implements OnModuleInit, OnModuleDestroy {
 
   async getAdminStats() {
     const since24h = new Date(Date.now() - 24 * 3_600_000);
-    const [totalNodes, onlineNodes, offlineNodes, totalOrgs, totalTelemetry24h, nodes] =
+    const [totalNodes, totalOrgs, totalTelemetry24h, nodes] =
       await Promise.all([
-        this.prisma.iotNode.count(),
-        this.prisma.iotNode.count({ where: { status: 'online' } }),
-        this.prisma.iotNode.count({ where: { status: 'offline' } }),
-        this.prisma.organization.count(),
-        this.prisma.iotTelemetry.count({ where: { recorded_at: { gte: since24h } } }),
-        this.prisma.iotNode.findMany({ include: NODE_WITH_LATEST }),
+        this.prisma.iotNode.count({ where: this.demoDataEnabled ? {} : { is_demo: false } }),
+        this.prisma.organization.count({ where: this.demoDataEnabled ? {} : { is_demo: false } }),
+        this.prisma.iotTelemetry.count({ where: { recorded_at: { gte: since24h }, ...(this.demoDataEnabled ? {} : { node: { is_demo: false } }) } }),
+        this.prisma.iotNode.findMany({ where: this.demoDataEnabled ? {} : { is_demo: false }, include: NODE_WITH_LATEST }),
       ]);
 
-    const aqis = nodes.map((n) => n.telemetry[0]?.aqi).filter((v): v is number => typeof v === 'number');
-    const avgAqi = aqis.length ? Math.round(aqis.reduce((a, b) => a + b, 0) / aqis.length) : 0;
+    const onlineNodes = nodes.filter((n) => this.isNodeOnline(n)).length;
+    const offlineNodes = nodes.filter((n) => n.status !== 'maintenance' && !this.isNodeOnline(n)).length;
+    const aqis = nodes.filter((n) => this.isNodeOnline(n)).map((n) => n.telemetry[0]?.aqi).filter((v): v is number => typeof v === 'number');
+    const avgAqi = aqis.length ? Math.round(aqis.reduce((a, b) => a + b, 0) / aqis.length) : null;
 
     return {
       totalNodes,
@@ -315,6 +342,7 @@ export class NodesService implements OnModuleInit, OnModuleDestroy {
       avgAqi,
       totalTelemetry24h,
       isSimulating: this.isSimulating,
+      simulatorEnabled: this.simulatorEnabled,
       ingestConfigured: !!this.config.get<string>('DEVICE_INGEST_TOKEN'),
     };
   }
@@ -322,11 +350,25 @@ export class NodesService implements OnModuleInit, OnModuleDestroy {
 
   // ---------- ORGANIZATIONS ----------
 
-  listOrganizations() {
-    return this.prisma.organization.findMany({
-      include: { _count: { select: { nodes: true, users: true } } },
+  private isAdmin(user: JwtUser): boolean {
+    return (this.config.get<string>('ADMIN_EMAILS') ?? '')
+      .split(',')
+      .some((email) => email.trim().toLowerCase() === user.email.toLowerCase());
+  }
+
+  async listOrganizations(user: JwtUser) {
+    const organizations = await this.prisma.organization.findMany({
+      where: {
+        ...(this.demoDataEnabled ? {} : { is_demo: false }),
+        ...(this.isAdmin(user) ? {} : { users: { some: { user_id: user.id } } }),
+      },
+      include: { _count: { select: { nodes: { where: this.demoDataEnabled ? {} : { is_demo: false } }, users: true } } },
       orderBy: { created_at: 'asc' },
     });
+    return organizations.map((organization) => ({
+      ...organization,
+      nodesCount: organization._count.nodes,
+    }));
   }
 
   async createOrganization(dto: CreateOrganizationDto) {
@@ -337,8 +379,8 @@ export class NodesService implements OnModuleInit, OnModuleDestroy {
           code: dto.code.toUpperCase(),
           type: dto.type || 'school',
           address: dto.address ?? null,
-          lat: dto.lat ?? HANOI.lat,
-          lng: dto.lng ?? HANOI.lng,
+          lat: dto.lat ?? null,
+          lng: dto.lng ?? null,
           contact_name: dto.contact_name ?? null,
           contact_phone: dto.contact_phone ?? null,
         },
@@ -355,7 +397,7 @@ export class NodesService implements OnModuleInit, OnModuleDestroy {
 
   async listNodes(orgId?: string) {
     const nodes = await this.prisma.iotNode.findMany({
-      where: orgId ? { organization_id: orgId } : undefined,
+      where: { ...(orgId ? { organization_id: orgId } : {}), ...(this.demoDataEnabled ? {} : { is_demo: false }) },
       include: NODE_WITH_LATEST,
       orderBy: { created_at: 'asc' },
     });
@@ -364,7 +406,7 @@ export class NodesService implements OnModuleInit, OnModuleDestroy {
 
   async getNodeDetails(id: string) {
     const node = await this.prisma.iotNode.findFirst({
-      where: { OR: [{ id }, { chip_id: id }] },
+      where: { OR: [{ id }, { chip_id: id }], ...(this.demoDataEnabled ? {} : { is_demo: false }) },
       include: {
         organization: { select: { name: true } },
         telemetry: { orderBy: { recorded_at: 'desc' }, take: 12 },
@@ -374,23 +416,32 @@ export class NodesService implements OnModuleInit, OnModuleDestroy {
 
     const { telemetry, organization, ...rest } = node;
     const latest = telemetry[0];
+    const isOnline = node.status === 'online' && this.isFresh(node.last_seen_at) && this.isFresh(latest?.recorded_at);
+    const current = isOnline ? latest : null;
     return {
       ...rest,
-      organization_name: organization?.name ?? 'Tự do (Chưa gán)',
-      pm25: latest?.pm25 ?? null,
-      pm10: latest?.pm10 ?? null,
-      aqi: latest?.aqi ?? null,
-      temperature: latest?.temperature ?? null,
-      humidity: latest?.humidity ?? null,
-      uv_index: latest?.uv_index ?? null,
-      co2: latest?.co2 ?? null,
-      voc_index: latest?.voc_index ?? null,
+      status: node.status === 'maintenance' ? 'maintenance' : isOnline ? 'online' : 'offline',
+      organization_name: organization?.name ?? null,
+      pm25: current?.pm25 ?? null,
+      pm10: current?.pm10 ?? null,
+      aqi: current?.aqi ?? null,
+      temperature: current?.temperature ?? null,
+      humidity: current?.humidity ?? null,
+      uv_index: current?.uv_index ?? null,
+      co2: current?.co2 ?? null,
+      voc_index: current?.voc_index ?? null,
       // Cũ → mới để FE vẽ biểu đồ theo trục thời gian tăng dần.
       history: [...telemetry].reverse(),
     };
   }
 
   async createNode(dto: CreateIotNodeDto) {
+    if (dto.organization_id) {
+      const organization = await this.prisma.organization.findUnique({ where: { id: dto.organization_id } });
+      if (!organization || (organization.is_demo && !this.demoDataEnabled)) {
+        throw new NotFoundException('Tổ chức không tồn tại');
+      }
+    }
     try {
       const node = await this.prisma.iotNode.create({
         data: {
@@ -400,7 +451,9 @@ export class NodesService implements OnModuleInit, OnModuleDestroy {
           lat: dto.lat,
           lng: dto.lng,
           location_name: dto.location_name ?? 'Khu vực chưa đặt tên',
-          hardware_ver: dto.hardware_ver || 'ESP32-Air-v2.1',
+          hardware_ver: dto.hardware_ver?.trim() || 'unknown',
+          edition: dto.edition ?? 'outdoor_solar',
+          power_source: dto.edition === 'indoor_grid' ? 'grid' : 'solar',
           mqtt_topic: `airweave/nodes/${dto.chip_id}/telemetry`,
         },
         include: NODE_WITH_LATEST,
@@ -416,10 +469,10 @@ export class NodesService implements OnModuleInit, OnModuleDestroy {
 
   async assignNodeToOrg(nodeId: string, orgId: string) {
     const org = await this.prisma.organization.findUnique({ where: { id: orgId } });
-    if (!org) throw new NotFoundException('Tổ chức không tồn tại');
+    if (!org || (org.is_demo && !this.demoDataEnabled)) throw new NotFoundException('Tổ chức không tồn tại');
 
     const result = await this.prisma.iotNode.updateMany({
-      where: { id: nodeId },
+      where: { id: nodeId, ...(this.demoDataEnabled ? {} : { is_demo: false }) },
       data: { organization_id: orgId },
     });
     if (result.count === 0) throw new NotFoundException('IoT Node không tồn tại');
@@ -430,7 +483,7 @@ export class NodesService implements OnModuleInit, OnModuleDestroy {
 
   async getUnassignedNodes() {
     const nodes = await this.prisma.iotNode.findMany({
-      where: { organization_id: null },
+      where: { organization_id: null, ...(this.demoDataEnabled ? {} : { is_demo: false }) },
       include: NODE_WITH_LATEST,
       orderBy: { created_at: 'desc' },
     });
@@ -446,20 +499,13 @@ export class NodesService implements OnModuleInit, OnModuleDestroy {
     const pm25 = dto.humidity !== undefined ? applyHumidityCorrection(dto.pm25, dto.humidity) : dto.pm25;
     const aqi = calculateAqiFromPm25(pm25);
 
-    const node = await this.prisma.iotNode.upsert({
-      where: { chip_id: dto.chip_id },
-      create: {
-        chip_id: dto.chip_id,
-        name: `IoT Node (${dto.chip_id})`,
-        lat: HANOI.lat,
-        lng: HANOI.lng,
-        location_name: 'Vị trí mới phát hiện',
-        hardware_ver: 'ESP32-Auto',
-        mqtt_topic: `airweave/nodes/${dto.chip_id}/telemetry`,
-        battery: dto.battery ?? 100,
-        rssi: dto.rssi ?? -65,
-      },
-      update: {
+    const registeredNode = await this.prisma.iotNode.findUnique({ where: { chip_id: dto.chip_id } });
+    if (!registeredNode || registeredNode.is_demo) {
+      throw new NotFoundException('Node chưa đăng ký; hãy khai báo node và vị trí thật trước khi gửi telemetry');
+    }
+    const node = await this.prisma.iotNode.update({
+      where: { id: registeredNode.id },
+      data: {
         status: 'online',
         last_seen_at: new Date(),
         ...(dto.battery !== undefined ? { battery: dto.battery } : {}),
@@ -495,23 +541,23 @@ export class NodesService implements OnModuleInit, OnModuleDestroy {
   async autoDiscoverNode(dto: { chip_id: string; hardware_ver?: string; edition?: string; mac?: string; lat?: number; lng?: number }) {
     const existing = await this.prisma.iotNode.findUnique({ where: { chip_id: dto.chip_id }, include: NODE_WITH_LATEST });
     if (existing) {
-      await this.prisma.iotNode.update({
-        where: { id: existing.id },
-        data: { status: 'online', last_seen_at: new Date() },
-      });
+      if (existing.is_demo) throw new ConflictException('Chip ID dành cho dữ liệu demo; hãy dùng ID thiết bị thật');
       return { isNew: false, node: this.shapeNode(existing) };
     }
 
+    if (!Number.isFinite(dto.lat) || !Number.isFinite(dto.lng)) {
+      throw new BadRequestException('Node mới cần tọa độ thật; không thể đặt mặc định tại Hà Nội');
+    }
     const node = await this.prisma.iotNode.create({
       data: {
         chip_id: dto.chip_id,
         name: `✨ Node Mới Phát Hiện (${dto.chip_id})`,
-        lat: dto.lat ?? HANOI.lat,
-        lng: dto.lng ?? HANOI.lng,
+        lat: dto.lat!,
+        lng: dto.lng!,
         location_name: 'Khai báo tự động qua MQTT',
         edition: dto.edition || 'outdoor_solar',
         power_source: dto.edition === 'indoor_grid' ? 'grid' : 'solar',
-        hardware_ver: dto.hardware_ver || 'ESP32-AutoDiscover-v2.0',
+        hardware_ver: dto.hardware_ver?.trim() || 'unknown',
         mqtt_topic: `airweave/nodes/${dto.chip_id}/telemetry`,
       },
       include: NODE_WITH_LATEST,
@@ -522,19 +568,25 @@ export class NodesService implements OnModuleInit, OnModuleDestroy {
 
   // ---------- ORG DASHBOARD ----------
 
-  async getOrgDashboard(orgId: string) {
-    const org = await this.prisma.organization.findUnique({ where: { id: orgId } });
+  async getOrgDashboard(orgId: string, user: JwtUser) {
+    const org = await this.prisma.organization.findFirst({
+      where: {
+        id: orgId,
+        ...(this.demoDataEnabled ? {} : { is_demo: false }),
+        ...(this.isAdmin(user) ? {} : { users: { some: { user_id: user.id } } }),
+      },
+    });
     if (!org) throw new NotFoundException('Tổ chức không tồn tại');
 
     const raw = await this.prisma.iotNode.findMany({
-      where: { organization_id: orgId },
+      where: { organization_id: orgId, ...(this.demoDataEnabled ? {} : { is_demo: false }) },
       include: NODE_WITH_LATEST,
       orderBy: { created_at: 'asc' },
     });
     const nodes = raw.map((n) => this.shapeNode(n));
 
     const aqis = nodes.map((n) => n.aqi).filter((v): v is number => typeof v === 'number');
-    const avgAqi = aqis.length ? Math.round(aqis.reduce((a, b) => a + b, 0) / aqis.length) : 50;
+    const avgAqi = aqis.length ? Math.round(aqis.reduce((a, b) => a + b, 0) / aqis.length) : null;
 
     return {
       organization: org,
@@ -543,7 +595,7 @@ export class NodesService implements OnModuleInit, OnModuleDestroy {
         totalNodes: nodes.length,
         onlineNodes: nodes.filter((n) => n.status === 'online').length,
         avgAqi,
-        airQualityCategory: avgAqi <= 50 ? 'Tốt' : avgAqi <= 100 ? 'Trung bình' : 'Kém',
+        airQualityCategory: avgAqi === null ? 'Chưa có dữ liệu' : avgAqi <= 50 ? 'Tốt' : avgAqi <= 100 ? 'Trung bình' : 'Kém',
       },
     };
   }

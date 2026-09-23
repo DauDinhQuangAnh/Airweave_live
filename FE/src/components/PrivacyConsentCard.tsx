@@ -29,7 +29,7 @@ export default function PrivacyConsentCard({ lang: propLang }: { lang?: 'vi' | '
 
   const handleDeleteProfile = async () => {
     if (!user) return;
-    if (!confirm(lang === 'vi' ? 'Xoá toàn bộ hồ sơ sức khoẻ và lịch sử hành vi trên thiết bị?' : 'Delete your health profile and on-device behavior history?')) return;
+    if (!confirm(lang === 'vi' ? 'Xoá tuỳ chọn sức khoẻ và lịch sử hành vi trên thiết bị? Medical ID và hồ sơ tài khoản không bị xoá.' : 'Delete health preferences and on-device behavior history? Medical ID and account profile will remain.')) return;
     try {
       await preferencesApi.upsert({
         medical_history: [],
@@ -39,7 +39,7 @@ export default function PrivacyConsentCard({ lang: propLang }: { lang?: 'vi' | '
       });
       clearBehavior();
       clearConsent();
-      toast.success(lang === 'vi' ? 'Đã xoá hồ sơ và lịch sử hành vi.' : 'Profile & behavior history deleted.');
+      toast.success(lang === 'vi' ? 'Đã xoá tuỳ chọn sức khoẻ và lịch sử hành vi.' : 'Health preferences and behavior history deleted.');
     } catch (e: any) {
       toast.error(e?.message ?? 'Error');
     }
@@ -56,8 +56,8 @@ export default function PrivacyConsentCard({ lang: propLang }: { lang?: 'vi' | '
 
       <p className="text-xs text-muted-foreground leading-relaxed">
         {lang === 'vi'
-          ? 'AirWeave chỉ lưu dữ liệu sức khoẻ và vị trí của bạn sau khi bạn đồng ý. Bạn có thể tắt theo dõi hành vi hoặc xoá hồ sơ bất kỳ lúc nào.'
-          : 'AirWeave only stores your health and location data after you consent. You can opt out of behavior tracking or delete your profile at any time.'}
+          ? 'Quản lý quyền dùng dữ liệu tại đây. Hồ sơ tài khoản, Medical ID và địa điểm đã lưu là các mục riêng; từ chối quyền không tự xoá dữ liệu đã lưu.'
+          : 'Manage data-use permissions here. Account profile, Medical ID and saved places are separate; denying consent does not automatically delete stored data.'}
       </p>
 
       <div className="space-y-2">
@@ -83,7 +83,7 @@ export default function PrivacyConsentCard({ lang: propLang }: { lang?: 'vi' | '
 
       <Button variant="outline" size="sm" className="w-full" onClick={handleDeleteProfile}>
         <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-        {lang === 'vi' ? 'Xoá hồ sơ sức khoẻ & lịch sử hành vi' : 'Delete profile & behavior history'}
+        {lang === 'vi' ? 'Xoá tuỳ chọn sức khoẻ & lịch sử hành vi' : 'Delete health preferences & behavior history'}
       </Button>
 
       <p className="text-[10px] text-muted-foreground/70 leading-snug">

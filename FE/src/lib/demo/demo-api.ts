@@ -21,21 +21,88 @@ import {
 const clone = <T>(v: T): T =>
   typeof structuredClone === 'function' ? structuredClone(v) : JSON.parse(JSON.stringify(v));
 
+const nowIso = () => new Date().toISOString();
+const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3600_000).toISOString();
+const hoursFromNow = (hours: number) => new Date(Date.now() + hours * 3600_000).toISOString();
+const genId = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+
+const demoOrganizations = [
+  {
+    id: 'org-1',
+    name: 'Sở TN&MT TP.HCM',
+    code: 'STNMT-HCM',
+    type: 'government',
+    address: 'TP. Hồ Chí Minh',
+    contact_name: 'Đầu mối minh họa AirWeave',
+    contact_phone: '0901 234 567',
+    description: 'Đơn vị vận hành mạng quan trắc minh họa tại TP.HCM.',
+    contact_email: 'demo-org@airweave.vn',
+    plan_tier: 'Demo',
+    status: 'sample',
+    created_at: hoursAgo(24 * 90),
+    updated_at: nowIso(),
+  },
+];
+
+const demoNodes = [
+  {
+    id: 'demo-node-q1', node_code: 'HCM-Q1-001', name: 'Trạm Quận 1',
+    edition: 'outdoor_solar', edition_type: 'outdoor', status: 'online',
+    lat: 10.7769, lng: 106.7009, location_name: 'Outdoor Solar Node', organization_id: 'org-1', organization_name: 'Sở TN&MT TP.HCM',
+    aqi: 96, pm25: 34.2, pm10: 58.1, temperature: 31.5, humidity: 72,
+    battery_level: 86, battery: 86, signal_strength: -57, rssi: -57, last_reading_at: nowIso(),
+  },
+  {
+    id: 'demo-node-q3', node_code: 'HCM-Q3-002', name: 'Trạm Quận 3',
+    edition: 'indoor_grid', edition_type: 'indoor', status: 'online',
+    lat: 10.7797, lng: 106.6875, location_name: 'Indoor Campus Grid Node', organization_id: 'org-1', organization_name: 'Sở TN&MT TP.HCM',
+    aqi: 88, pm25: 29.4, pm10: 49.8, temperature: 29.2, humidity: 68,
+    battery_level: 100, battery: 100, signal_strength: -48, rssi: -48, last_reading_at: nowIso(),
+  },
+  {
+    id: 'demo-node-q7', node_code: 'HCM-Q7-003', name: 'Trạm Quận 7',
+    edition: 'outdoor_solar', edition_type: 'outdoor', status: 'maintenance',
+    lat: 10.7326, lng: 106.7196, location_name: 'Outdoor Solar Node', organization_id: 'org-1', organization_name: 'Sở TN&MT TP.HCM',
+    aqi: 134, pm25: 49.0, pm10: 71.2, temperature: 32.1, humidity: 70,
+    battery_level: 42, battery: 42, signal_strength: -76, rssi: -76, last_reading_at: hoursAgo(3),
+  },
+];
+
 // Bản sao có thể thay đổi trong bộ nhớ cho phiên demo.
-const store = {
+const store: any = {
   profile: clone(identity.profile) as Record<string, any>,
   preferences: clone(identity.preferences) as Record<string, any>,
   locations: clone(identity.locations) as Record<string, any>[],
-  liveContext: clone(identity.liveContext) as Record<string, any>,
+  liveContext: { ...clone(identity.liveContext), snapshot_updated_at: nowIso(), updated_at: nowIso() } as Record<string, any> | null,
   medicalProfiles: clone(social.medicalProfiles) as Record<string, any>[],
   conditions: clone(social.conditions) as Record<string, any>[],
   sosEvents: clone(social.sosEvents) as Record<string, any>[],
-  communityReports: clone(social.communityReports) as Record<string, any>[],
-  myCommunityReports: clone(social.myCommunityReports) as Record<string, any>[],
+  communityReports: (clone(social.communityReports) as Record<string, any>[]).map((item, index) => ({
+    ...item,
+    created_at: hoursAgo([0.5, 1.25, 2.5][index] ?? 3),
+    expires_at: hoursFromNow([5.5, 4.75, 3.5][index] ?? 3),
+  })),
+  myCommunityReports: (clone(social.myCommunityReports) as Record<string, any>[]).map((item) => ({
+    ...item,
+    created_at: hoursAgo(0.75),
+    expires_at: hoursFromNow(5.25),
+  })),
+  organizations: clone(demoOrganizations) as Record<string, any>[],
+  nodes: clone(demoNodes) as Record<string, any>[],
+  simulatorEnabled: false,
 };
 
-const nowIso = () => new Date().toISOString();
-const genId = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+function demoAirPoint() {
+  return { ...clone(air.waqiPoint), time: nowIso() };
+}
+
+function demoHistory() {
+  const source = clone(air.history) as Record<string, any>[];
+  return source.map((item, index) => ({
+    ...item,
+    date: new Date(Date.now() - (source.length - 1 - index) * 86_400_000).toISOString().slice(0, 10),
+  }));
+}
 
 type Ctx = {
   params: Record<string, string>;
@@ -112,19 +179,28 @@ const ROUTES: Route[] = [
   // ----- Tuỳ chọn -----
   route('GET', '/preferences', () => clone(store.preferences)),
   route('PUT', '/preferences', ({ body }) => {
-    Object.assign(store.preferences, body ?? {}, { updated_at: nowIso() });
+    store.preferences = { ...(store.preferences ?? {}), ...(body ?? {}), updated_at: nowIso() };
     return clone(store.preferences);
   }),
   route('POST', '/preferences/mark-alert-sent', ({ body }) => {
+    store.preferences ??= {};
     store.preferences.last_alert_aqi = body?.aqi ?? store.preferences.last_alert_aqi;
     store.preferences.last_alert_at = nowIso();
     return clone(store.preferences);
   }),
-  route('DELETE', '/preferences', () => ({ success: true })),
+  route('DELETE', '/preferences', () => {
+    store.preferences = null;
+    return { success: true };
+  }),
 
   // ----- Địa điểm -----
   route('GET', '/locations', () => clone(store.locations)),
   route('POST', '/locations', ({ body }) => {
+    const existing = store.locations.find((l: any) => l.location_type === (body?.location_type ?? 'home'));
+    if (existing) {
+      Object.assign(existing, body ?? {}, { updated_at: nowIso() });
+      return clone(existing);
+    }
     const item = {
       id: genId('demo-loc'),
       user_id: identity.user.id,
@@ -151,20 +227,27 @@ const ROUTES: Route[] = [
   // ----- Ngữ cảnh trực tiếp -----
   route('GET', '/live-context', () => clone(store.liveContext)),
   route('PUT', '/live-context', ({ body }) => {
-    Object.assign(store.liveContext, body ?? {}, { updated_at: nowIso() });
+    store.liveContext = {
+      ...(store.liveContext ?? { id: 'demo-live-0001', user_id: identity.user.id, created_at: nowIso() }),
+      ...(body ?? {}),
+      updated_at: nowIso(),
+    };
     return clone(store.liveContext);
   }),
-  route('DELETE', '/live-context', () => ({ success: true })),
+  route('DELETE', '/live-context', () => {
+    store.liveContext = null;
+    return { success: true };
+  }),
 
   // ----- Không khí -----
-  route('POST', '/air/waqi', () => clone(air.waqiPoint)),
+  route('POST', '/air/waqi', () => demoAirPoint()),
   route('POST', '/air/waqi/bounds', () => ({
     source: 'waqi' as const,
     available: true,
-    stations: clone(air.stations),
+    stations: (clone(air.stations) as Record<string, any>[]).map((station) => ({ ...station, time: nowIso() })),
   })),
-  route('GET', '/air/current', () => clone(air.current)),
-  route('GET', '/air/history', () => clone(air.history)),
+  route('GET', '/air/current', () => ({ ...clone(air.current), updated_at: nowIso() })),
+  route('GET', '/air/history', () => demoHistory()),
   route('GET', '/air/ranking', () => clone(air.ranking)),
 
   // ----- Cộng đồng -----
@@ -187,6 +270,8 @@ const ROUTES: Route[] = [
   route('PATCH', '/community-reports/:id', ({ params, body }) => {
     const item = store.communityReports.find((r) => r.id === params.id);
     if (item) Object.assign(item, body ?? {});
+    const mine = store.myCommunityReports.find((r: any) => r.id === params.id);
+    if (mine) Object.assign(mine, body ?? {});
     return clone(item ?? {});
   }),
   route('DELETE', '/community-reports/:id', ({ params }) => {
@@ -222,6 +307,8 @@ const ROUTES: Route[] = [
   }),
   route('DELETE', '/medical/profiles/:id', ({ params }) => {
     store.medicalProfiles = store.medicalProfiles.filter((p) => p.id !== params.id);
+    store.conditions = store.conditions.filter((c: any) => c.profile_id !== params.id);
+    store.sosEvents = store.sosEvents.filter((event: any) => event.profile_id !== params.id);
     return { success: true };
   }),
   route('GET', '/medical/conditions', () => clone(store.conditions)),
@@ -231,6 +318,10 @@ const ROUTES: Route[] = [
     );
     if (existing) {
       existing.note = body?.note ?? existing.note;
+      const profileCondition = store.medicalProfiles
+        .find((p: any) => p.id === existing.profile_id)?.conditions
+        ?.find((c: any) => c.id === existing.id);
+      if (profileCondition) profileCondition.note = existing.note;
       return clone(existing);
     }
     const item = {
@@ -243,28 +334,56 @@ const ROUTES: Route[] = [
       created_at: nowIso(),
     };
     store.conditions.push(item);
+    const profile = store.medicalProfiles.find((p: any) => p.id === item.profile_id);
+    if (profile) profile.conditions.push(clone(item));
     return clone(item);
+  }),
+  route('POST', '/medical/conditions/toggle', ({ body }) => {
+    const index = store.conditions.findIndex(
+      (c: any) => c.profile_id === body?.profile_id && c.category === body?.category && c.code === body?.code,
+    );
+    if (index >= 0) {
+      const [removed] = store.conditions.splice(index, 1);
+      const profile = store.medicalProfiles.find((p: any) => p.id === removed.profile_id);
+      if (profile) profile.conditions = profile.conditions.filter((c: any) => c.id !== removed.id);
+      return { action: 'removed', condition: clone(removed) };
+    }
+
+    const item = {
+      id: genId('demo-cond'), profile_id: body?.profile_id ?? 'demo-med-self', user_id: identity.user.id,
+      category: body?.category ?? 'other', code: body?.code ?? 'other', note: body?.note ?? null,
+      created_at: nowIso(),
+    };
+    store.conditions.push(item);
+    const profile = store.medicalProfiles.find((p: any) => p.id === item.profile_id);
+    if (profile) profile.conditions.push(clone(item));
+    return { action: 'added', condition: clone(item) };
   }),
   route('DELETE', '/medical/conditions/:id', ({ params }) => {
     store.conditions = store.conditions.filter((c) => c.id !== params.id);
+    store.medicalProfiles.forEach((profile: any) => {
+      profile.conditions = profile.conditions.filter((c: any) => c.id !== params.id);
+    });
     return { success: true };
   }),
 
   // ----- SOS -----
   route('POST', '/sos/events', ({ body }) => {
     const token = genId('demo-share');
+    const live = store.liveContext ?? identity.liveContext;
+    const ttlHours = Math.max(1, Number(body?.ttl_hours) || 24);
     const item = {
       id: genId('demo-sos'),
       user_id: identity.user.id,
       profile_id: body?.profile_id ?? 'demo-med-self',
-      lat: body?.lat ?? store.liveContext.lat,
-      lng: body?.lng ?? store.liveContext.lng,
-      aqi: body?.aqi ?? store.liveContext.aqi,
-      pm25: body?.pm25 ?? store.liveContext.pm25,
+      lat: body?.lat ?? live.lat,
+      lng: body?.lng ?? live.lng,
+      aqi: body?.aqi ?? live.aqi,
+      pm25: body?.pm25 ?? live.pm25,
       share_token: token,
       triggered_at: nowIso(),
-      expires_at: new Date(Date.now() + 3600 * 1000).toISOString(),
-      share_url: `${location.origin}/sos/${token}`,
+      expires_at: hoursFromNow(ttlHours),
+      share_url: `${location.origin}/qr/${token}`,
     };
     store.sosEvents.unshift(item);
     return clone(item);
@@ -277,14 +396,15 @@ const ROUTES: Route[] = [
   route('GET', '/sos/share/:token', ({ params }) => {
     const event = store.sosEvents.find((e) => e.share_token === params.token);
     const profile = store.medicalProfiles[0] ?? {};
+    const live = store.liveContext ?? identity.liveContext;
     return {
       event: {
-        lat: event?.lat ?? store.liveContext.lat,
-        lng: event?.lng ?? store.liveContext.lng,
-        aqi: event?.aqi ?? store.liveContext.aqi,
-        pm25: event?.pm25 ?? store.liveContext.pm25,
+        lat: event?.lat ?? live.lat,
+        lng: event?.lng ?? live.lng,
+        aqi: event?.aqi ?? live.aqi,
+        pm25: event?.pm25 ?? live.pm25,
         triggered_at: event?.triggered_at ?? nowIso(),
-        expires_at: event?.expires_at ?? nowIso(),
+        expires_at: event?.expires_at ?? hoursFromNow(24),
       },
       profile: {
         display_name: profile.display_name ?? 'Nguyễn Văn A',
@@ -324,25 +444,86 @@ const ROUTES: Route[] = [
   route('GET', '/config/onesignal', () => ({ appId: null })),
 
   // ----- IoT Nodes & Tổ chức -----
-  // Các trang Admin (AdminDashboard, AdminNodesManager, AdminOrgsManager, OrgDashboard)
-  // ĐÃ chứa sẵn dữ liệu MOCK phong phú (MOCK_NODES / MOCK_ORGS / MOCK_ORG_DASHBOARD)
-  // và tự dùng khi API không trả dữ liệu. Trong demo ta "tránh đường" bằng cách trả
-  // null cho các endpoint đọc → mỗi trang tự render mock hardcode của chính nó.
-  //   - Dashboard/Nodes/Orgs: chỉ ghi đè khi mảng length > 0 → null giữ mock.
-  //   - OrgDashboard: guard `if (res && res.nodes)` coi [] là truthy → BẮT BUỘC trả null.
-  route('GET', '/nodes/admin/stats', () => null),
-  route('GET', '/nodes/admin/simulator/status', () => null),
-  // Trả null để handleToggleSimulator tự lật trạng thái dựa trên state hiện tại.
-  route('POST', '/nodes/admin/simulator/toggle', () => null),
-  route('GET', '/nodes/organizations', () => null),
-  route('POST', '/nodes/organizations', ({ body }) => ({ id: genId('demo-org'), ...(body ?? {}) })),
-  route('GET', '/nodes/list', () => null),
-  route('GET', '/nodes/details/:id', () => null),
-  route('POST', '/nodes/create', ({ body }) => ({ id: genId('demo-node'), ...(body ?? {}) })),
-  route('PATCH', '/nodes/assign/:nodeId/org/:orgId', () => ({ success: true })),
-  route('POST', '/nodes/autodiscover', ({ body }) => ({ id: genId('demo-node'), ...(body ?? {}) })),
-  route('GET', '/nodes/unassigned', () => null),
-  route('GET', '/nodes/org-dashboard/:id', () => null),
+  // Một nguồn dữ liệu duy nhất phục vụ bản đồ, Admin và Enterprise View.
+  route('GET', '/nodes/admin/stats', () => ({
+    totalNodes: store.nodes.length,
+    onlineNodes: store.nodes.filter((node: any) => node.status === 'online').length,
+    offlineNodes: store.nodes.filter((node: any) => node.status === 'offline').length,
+    warningNodes: store.nodes.filter((node: any) => node.status === 'maintenance').length,
+    totalOrgs: store.organizations.length,
+    avgAqi: Math.round(store.nodes.reduce((sum: number, node: any) => sum + (node.aqi ?? 0), 0) / Math.max(store.nodes.length, 1)),
+    isSimulating: store.simulatorEnabled,
+    simulatorEnabled: false,
+  })),
+  route('GET', '/nodes/admin/simulator/status', () => ({ isSimulating: false, simulatorEnabled: false })),
+  route('POST', '/nodes/admin/simulator/toggle', () => ({ isSimulating: false, simulatorEnabled: false })),
+  route('GET', '/nodes/organizations', () => clone(store.organizations.map((org: any) => ({
+    ...org,
+    nodesCount: store.nodes.filter((node: any) => node.organization_id === org.id).length,
+    _count: { nodes: store.nodes.filter((node: any) => node.organization_id === org.id).length },
+  })))),
+  route('POST', '/nodes/organizations', ({ body }) => {
+    const item = {
+      id: genId('demo-org'), ...(body ?? {}), plan_tier: 'Demo', status: 'sample',
+      created_at: nowIso(), updated_at: nowIso(), nodesCount: 0, _count: { nodes: 0 },
+    };
+    store.organizations.push(item);
+    return clone(item);
+  }),
+  route('GET', '/nodes/list', ({ query }) => clone(
+    query?.orgId ? store.nodes.filter((node: any) => node.organization_id === query.orgId) : store.nodes,
+  )),
+  route('GET', '/nodes/details/:id', ({ params }) => clone(store.nodes.find((node: any) => node.id === params.id) ?? null)),
+  route('POST', '/nodes/create', ({ body }) => {
+    const edition = body?.edition ?? 'outdoor_solar';
+    const org = store.organizations.find((item: any) => item.id === body?.organization_id);
+    const item = {
+      id: genId('demo-node'), node_code: body?.chip_id ?? genId('HCM'), chip_id: body?.chip_id,
+      name: body?.name ?? 'Trạm demo mới', edition,
+      edition_type: edition === 'outdoor_solar' ? 'outdoor' : 'indoor', status: 'online',
+      organization_id: org?.id ?? null, organization_name: org?.name ?? null,
+      lat: body?.lat ?? 0, lng: body?.lng ?? 0, location_name: body?.location_name ?? null,
+      aqi: 0, pm25: 0, pm10: 0, temperature: 0, humidity: 0,
+      battery_level: 100, battery: 100, signal_strength: -50, rssi: -50, last_reading_at: nowIso(),
+    };
+    store.nodes.push(item);
+    return clone(item);
+  }),
+  route('PATCH', '/nodes/assign/:nodeId/org/:orgId', ({ params }) => {
+    const node = store.nodes.find((item: any) => item.id === params.nodeId);
+    const org = store.organizations.find((item: any) => item.id === params.orgId);
+    if (node) {
+      node.organization_id = org?.id ?? null;
+      node.organization_name = org?.name ?? null;
+    }
+    return clone(node ?? { success: false });
+  }),
+  route('POST', '/nodes/autodiscover', ({ body }) => {
+    const item = {
+      id: genId('demo-node'), node_code: body?.chip_id, chip_id: body?.chip_id,
+      name: `Trạm ${body?.chip_id ?? 'mới'}`, edition: body?.edition ?? 'outdoor_solar',
+      edition_type: body?.edition === 'indoor_grid' ? 'indoor' : 'outdoor', status: 'online',
+      organization_id: null, organization_name: null, lat: 0, lng: 0,
+      aqi: 0, pm25: 0, pm10: 0, temperature: 0, humidity: 0, last_reading_at: nowIso(),
+    };
+    store.nodes.push(item);
+    return clone(item);
+  }),
+  route('GET', '/nodes/unassigned', () => clone(store.nodes.filter((node: any) => !node.organization_id))),
+  route('GET', '/nodes/org-dashboard/:id', ({ params }) => {
+    const organization = store.organizations.find((org: any) => org.id === params.id) ?? null;
+    const nodes = store.nodes.filter((node: any) => node.organization_id === params.id);
+    return {
+      organization: clone(organization),
+      nodes: clone(nodes),
+      summary: {
+        totalNodes: nodes.length,
+        onlineNodes: nodes.filter((node: any) => node.status === 'online').length,
+        offlineNodes: nodes.filter((node: any) => node.status === 'offline').length,
+        avgAqi: nodes.length ? Math.round(nodes.reduce((sum: number, node: any) => sum + node.aqi, 0) / nodes.length) : null,
+      },
+    };
+  }),
 ];
 
 /**

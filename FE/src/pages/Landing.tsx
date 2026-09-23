@@ -5,15 +5,16 @@ import { Button } from '@/components/ui/button';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/hooks/use-auth';
 import { useGeolocation } from '@/hooks/use-geolocation';
-import { useWeatherData } from '@/hooks/use-weather-data';
+import { hasWeatherMetric, useWeatherData } from '@/hooks/use-weather-data';
+import { hasAirQualityReading } from '@/lib/air-quality';
 import AuroraBackground from '@/components/AuroraBackground';
 import AQITicker, { buildCurrentAirTickerItems } from '@/components/landing/AQITicker';
 import HeroSection from '@/components/landing/HeroSection';
+import { getStoredLanguage, persistLanguage } from '@/lib/language';
+import { useAppLang } from '@/hooks/use-app-lang';
 
-const StatsStrip = lazy(() => import('@/components/landing/StatsStrip'));
 const FeaturesSection = lazy(() => import('@/components/landing/FeaturesSection'));
 const HowItWorks = lazy(() => import('@/components/landing/HowItWorks'));
-const Testimonials = lazy(() => import('@/components/landing/Testimonials'));
 const PricingCards = lazy(() => import('@/components/landing/PricingCards'));
 const CTABottom = lazy(() => import('@/components/landing/CTABottom'));
 const LandingFooter = lazy(() => import('@/components/landing/LandingFooter'));
@@ -21,34 +22,37 @@ const LandingFooter = lazy(() => import('@/components/landing/LandingFooter'));
 const DeferredFallback = () => <div className="h-24" aria-hidden="true" />;
 
 const LandingAQITicker = () => {
+  const lang = useAppLang();
   const { location } = useGeolocation({
     autoRequest: true,
     requirePriorConsentForAutoRequest: false,
   });
-  const { weather } = useWeatherData(location, 'vi');
+  const { weather } = useWeatherData(location, lang);
   const hasUsableLocation = location.status === 'active' || location.status === 'manual';
-  const hasLiveAQI = hasUsableLocation && !weather.loading && !weather.error && weather.aqi > 0;
+  const hasLiveAQI = hasUsableLocation && hasAirQualityReading(weather);
 
   return (
     <AQITicker
       items={hasLiveAQI ? buildCurrentAirTickerItems({
         locationLabel: location.label,
         aqi: weather.aqi,
-        pm25: weather.pm25,
-        pm10: weather.pm10,
-        temperature: weather.temperature,
-        humidity: weather.humidity,
-        windSpeed: weather.windSpeed,
-        source: weather.station || (weather.source === 'waqi' ? 'WAQI' : 'Open-Meteo'),
+        pm25: hasWeatherMetric(weather, 'pm25') ? weather.pm25 : null,
+        pm10: hasWeatherMetric(weather, 'pm10') ? weather.pm10 : null,
+        temperature: hasWeatherMetric(weather, 'temperature') ? weather.temperature : null,
+        humidity: hasWeatherMetric(weather, 'humidity') ? weather.humidity : null,
+        windSpeed: hasWeatherMetric(weather, 'windSpeed') ? weather.windSpeed : null,
+        source: weather.source === 'demo' ? (lang === 'vi' ? 'Dữ liệu mô phỏng' : 'Simulated data') : weather.station || (weather.source === 'waqi' ? 'WAQI' : 'Open-Meteo'),
+        lang,
       }) : []}
       loading={location.loading || weather.loading}
       message={
         location.status === 'denied'
-          ? 'Ban da chan quyen vi tri. Bam "Dung vi tri cua toi" trong the AQI de thu lai.'
+          ? (lang === 'vi' ? 'Bạn đã chặn quyền vị trí. Hãy cấp quyền rồi thử lại.' : 'Location permission denied. Grant access and try again.')
           : location.status === 'unavailable' || location.status === 'iframe-blocked'
-            ? 'Khong lay duoc vi tri hien tai.'
-            : 'Chua co du lieu AQI theo vi tri hien tai.'
+            ? (lang === 'vi' ? 'Không lấy được vị trí hiện tại.' : 'Current location is unavailable.')
+            : (lang === 'vi' ? 'Chưa có dữ liệu AQI theo vị trí hiện tại.' : 'No location-based AQI data available.')
       }
+      lang={lang}
       animate
     />
   );
@@ -100,10 +104,8 @@ const DeferredLandingSections = () => {
 
   return (
     <Suspense fallback={<DeferredFallback />}>
-      <StatsStrip />
       <FeaturesSection />
       <HowItWorks />
-      <Testimonials />
       <PricingCards />
       <CTABottom />
       <LandingFooter />
@@ -113,6 +115,7 @@ const DeferredLandingSections = () => {
 
 const Landing = () => {
   const navigate = useNavigate();
+  const [lang, setLang] = useState<'vi' | 'en'>(getStoredLanguage);
   const { theme, toggleTheme } = useTheme();
   const { user, loading, onboardingCompleted } = useAuth();
   const goApp = () => navigate('/dashboard');
@@ -148,7 +151,7 @@ const Landing = () => {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-background text-foreground">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        <p className="font-heading text-sm font-bold">Đang mở AirWeave...</p>
+        <p className="font-heading text-sm font-bold">{lang === 'vi' ? 'Đang mở AirWeave...' : 'Opening AirWeave...'}</p>
       </div>
     );
   }
@@ -166,20 +169,23 @@ const Landing = () => {
           <span className="font-heading text-xl font-extrabold tracking-tight text-foreground">AirWeave</span>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => { const next = lang === 'vi' ? 'en' : 'vi'; persistLanguage(next); setLang(next); }} aria-label={lang === 'vi' ? 'Chuyển sang tiếng Anh' : 'Switch to Vietnamese'} className="font-heading text-xs font-semibold">
+            {lang === 'vi' ? 'EN' : 'VI'}
+          </Button>
           <Button variant="ghost" size="icon" onClick={toggleTheme} className="w-9 h-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent">
             {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
           </Button>
           {user ? (
             <Button size="sm" onMouseEnter={prefetchApp} onClick={goApp} className="font-heading text-sm font-semibold gap-1.5 bg-gradient-to-r from-[#00d4aa] to-[#0ea5e9] hover:opacity-90 text-white border-0">
-              <LayoutDashboard className="w-4 h-4" /> Vào ứng dụng
+              <LayoutDashboard className="w-4 h-4" /> {lang === 'vi' ? 'Vào ứng dụng' : 'Open app'}
             </Button>
           ) : (
             <>
               <Button variant="ghost" size="sm" onFocus={prefetchAuth} onPointerEnter={prefetchAuth} onTouchStart={prefetchAuth} onMouseDown={prefetchAuth} onClick={() => { prefetchAuth(); navigate('/auth'); }} className="font-heading text-sm text-muted-foreground hover:text-foreground hover:bg-accent">
-                Đăng nhập
+                {lang === 'vi' ? 'Đăng nhập' : 'Sign in'}
               </Button>
               <Button size="sm" onFocus={prefetchAuth} onPointerEnter={prefetchAuth} onTouchStart={prefetchAuth} onMouseDown={prefetchAuth} onClick={() => { prefetchAuth(); navigate('/auth'); }} className="font-heading text-sm font-semibold bg-gradient-to-r from-[#00d4aa] to-[#0ea5e9] hover:opacity-90 text-white border-0">
-                Bắt đầu
+                {lang === 'vi' ? 'Bắt đầu' : 'Get started'}
               </Button>
             </>
           )}

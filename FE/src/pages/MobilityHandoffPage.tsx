@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Car, Plug, ChevronDown, ExternalLink, Lock, Map as MapIcon, Search, Loader2, MapPin, X, Crosshair, Navigation } from 'lucide-react';
+import { Car, Plug, ChevronDown, ExternalLink, Lock, Map as MapIcon, Search, Loader2, MapPin, X, Crosshair, Navigation, ShieldCheck, Sparkles } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import MobilityHandoff from '@/components/smart-route/MobilityHandoff';
 import { useLiveAirContext } from '@/contexts/live-air-context';
-import FeatureExperienceLayout from '@/components/feature-experience/FeatureExperienceLayout';
+import AuroraBackground from '@/components/AuroraBackground';
 
 interface PlaceSuggestion {
   id: string;
@@ -149,36 +149,40 @@ const MobilityHandoffPage = () => {
   };
 
   return (
-    <FeatureExperienceLayout
-      lang={lang}
-      badge={lang === 'vi' ? 'Giải pháp' : 'Solution'}
-      heading={lang === 'vi' ? 'Chuyển sang app di chuyển bạn đã có' : 'Hand off to your mobility app'}
-      subheading={lang === 'vi'
-        ? 'AirWeave không phải app gọi xe. Trang này chỉ chuyển điểm đi / điểm đến sang Grab, Be, Xanh SM, Tada, Google Maps, Apple Maps — bạn quyết định mở app nào.'
-        : 'AirWeave is not a ride-hailing app. We only hand origin/destination off to Grab, Be, Xanh SM, Tada, Google Maps, Apple Maps.'}
-      benefits={[
-        { icon: <ExternalLink className="w-4 h-4" />, title: lang === 'vi' ? 'Mở ngoài 1 chạm' : '1-tap deep link', text: lang === 'vi' ? 'Tự động điền điểm đi / điểm đến vào app đối tác.' : 'Auto-fills origin/destination in partner apps.' },
-        { icon: <MapIcon className="w-4 h-4" />, title: lang === 'vi' ? 'Đa nền tảng' : 'Multi-platform', text: lang === 'vi' ? 'Hỗ trợ Grab, Be, Xanh SM, Tada, Google Maps, Apple Maps.' : 'Supports Grab, Be, Xanh SM, Tada, Google & Apple Maps.' },
-        { icon: <Lock className="w-4 h-4" />, title: lang === 'vi' ? 'Không chia sẻ hồ sơ' : 'No profile sharing', text: lang === 'vi' ? 'Medical ID và hồ sơ sức khoẻ không bao giờ gửi sang app khác.' : 'Medical ID and health profile are never forwarded.' },
-      ]}
-      chips={[lang === 'vi' ? 'Grab · Be · Xanh SM · Tada' : 'Grab · Be · Xanh SM · Tada', 'Google / Apple Maps', lang === 'vi' ? 'Mở ngoài ứng dụng' : 'External app']}
-    >
-    <div className="h-full overflow-y-auto bg-background">
-      <div className="max-w-3xl mx-auto p-4 md:p-6 space-y-4">
-        <header className="flex items-center gap-2">
-          <Car className="w-5 h-5 text-primary" />
-          <h1 className="font-heading text-xl md:text-2xl font-bold text-foreground">
-            {lang === 'vi' ? 'Di chuyển & đặt xe' : 'Mobility Handoff'}
-          </h1>
-        </header>
+    <div className="h-full overflow-y-auto bg-[#050911] text-white relative font-body p-4 md:p-6 space-y-6 scrollbar-thin">
+      <AuroraBackground />
 
-        <p className="text-xs text-muted-foreground font-body">
-          {lang === 'vi'
-            ? 'AirWeave không phải app gọi xe. Trang này chuyển điểm đi/đến của bạn sang app khác (Grab, Be, Xanh SM, Tada, Google Maps, Apple Maps) để bạn tiếp tục di chuyển. Hồ sơ sức khoẻ và Medical ID không bao giờ được chia sẻ.'
-            : 'AirWeave is not a ride-hailing app. This page hands your origin/destination to an external app (Grab, Be, Xanh SM, Tada, Google Maps, Apple Maps). Health profile and Medical ID are never shared.'}
-        </p>
+      <div className="max-w-4xl mx-auto space-y-6 relative z-10">
+        {/* Top Header Card */}
+        <div className="p-5 rounded-2xl bg-[#0a1120]/80 backdrop-blur-md border border-white/10 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500/30 to-cyan-600/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-md shrink-0">
+              <Car className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h1 className="font-heading font-extrabold text-xl md:text-2xl text-white">
+                  {lang === 'vi' ? 'Di chuyển & Đặt xe' : 'Mobility Handoff'}
+                </h1>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono">
+                  SMART HANDOFF
+                </span>
+              </div>
+              <p className="text-xs text-white/60 mt-0.5">
+                {lang === 'vi'
+                  ? 'Chuyển tọa độ lộ trình sạch sang các ứng dụng gọi xe (Grab, Be, Xanh SM, Tada, Maps)'
+                  : 'Transfer your clean route coordinates directly to Grab, Be, Xanh SM, Tada, or Maps'}
+              </p>
+            </div>
+          </div>
 
-        <div className="rounded-2xl border border-border bg-card/80 p-4 md:p-5">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold shrink-0">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span>{lang === 'vi' ? 'Bảo mật tuyệt đối — Không gửi Medical ID' : 'Private — No Health Data Shared'}</span>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-[#0a1120]/80 backdrop-blur-md p-4 md:p-5 shadow-lg">
           <p className="text-sm font-heading font-bold text-foreground flex items-center gap-2 mb-4">
             <Navigation className="w-4 h-4 text-primary" />
             {lang === 'vi' ? 'Chọn điểm đi & điểm đến' : 'Choose origin & destination'}
@@ -429,7 +433,7 @@ const MobilityHandoffPage = () => {
           </p>
         )}
 
-        <div className="rounded-2xl border border-dashed border-border bg-muted/30 p-4">
+        <div className="rounded-2xl border border-white/10 bg-[#0a1120]/60 backdrop-blur-md p-4">
           <button
             type="button"
             onClick={() => setShowApi((v) => !v)}
@@ -461,7 +465,6 @@ const MobilityHandoffPage = () => {
         </div>
       </div>
     </div>
-    </FeatureExperienceLayout>
   );
 };
 

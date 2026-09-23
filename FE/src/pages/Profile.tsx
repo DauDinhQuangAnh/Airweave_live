@@ -29,6 +29,7 @@ import PrivacyConsentCard from '@/components/PrivacyConsentCard';
 import PrivacyStatusBadges from '@/components/PrivacyStatusBadges';
 import { checkEssentialProfile, type EssentialProfileStatus } from '@/lib/profile-completion';
 import { useGeolocation } from '@/hooks/use-geolocation';
+import { localizeDemoText } from '@/lib/localize-demo';
 
 const locationTypes = [
   { value: 'home', labelVi: 'Nhà', labelEn: 'Home', icon: <Home className="w-4 h-4" /> },
@@ -57,6 +58,7 @@ const Profile = () => {
   const [preferences, setPreferences] = useState<any>(null);
   const [locations, setLocations] = useState<any[]>([]);
   const [newLocation, setNewLocation] = useState({ type: '', label: '', lat: '', lng: '' });
+  const [waitingForLocation, setWaitingForLocation] = useState(false);
   const [savingLocation, setSavingLocation] = useState(false);
   const [savingPreferences, setSavingPreferences] = useState(false);
 
@@ -84,43 +86,43 @@ const Profile = () => {
     loadAll();
   }, [user]);
 
+  useEffect(() => {
+    if (!waitingForLocation) return;
+    if (gpsLoc.status === 'active' || gpsLoc.status === 'manual') {
+      setNewLocation((prev) => ({
+        ...prev,
+        type: prev.type || 'home',
+        label: gpsLoc.label || `GPS (${gpsLoc.lat.toFixed(4)}, ${gpsLoc.lng.toFixed(4)})`,
+        lat: String(gpsLoc.lat),
+        lng: String(gpsLoc.lng),
+      }));
+      setWaitingForLocation(false);
+      toast.success(lang === 'vi' ? 'Đã lấy vị trí GPS.' : 'GPS location acquired.');
+    } else if (['denied', 'unavailable', 'iframe-blocked'].includes(gpsLoc.status)) {
+      setWaitingForLocation(false);
+      toast.error(lang === 'vi' ? 'Không lấy được GPS. Vui lòng cấp quyền hoặc chọn vị trí thủ công.' : 'GPS unavailable. Grant permission or choose a location manually.');
+    }
+  }, [gpsLoc.status, gpsLoc.lat, gpsLoc.lng, gpsLoc.label, waitingForLocation, lang]);
+
   if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
   if (!user) return <Navigate to="/auth" replace />;
 
   const status: EssentialProfileStatus = checkEssentialProfile(profile, preferences, locations);
 
   const handleUseGPSForLocation = () => {
-    requestLocation();
-    let label = lang === 'vi' ? 'Vị trí GPS hiện tại (Hà Nội)' : 'Current GPS location (Hanoi)';
-    let latVal = 21.0285;
-    let lngVal = 105.8542;
-
-    if (gpsLoc?.label) {
-      label = gpsLoc.label;
-    } else if (gpsLoc?.lat && gpsLoc?.lng) {
-      label = `GPS (${gpsLoc.lat.toFixed(4)}, ${gpsLoc.lng.toFixed(4)})`;
-    }
-
-    if (gpsLoc?.lat) latVal = gpsLoc.lat;
-    if (gpsLoc?.lng) lngVal = gpsLoc.lng;
-
-    setNewLocation((prev) => ({
-      ...prev,
-      type: prev.type || 'home',
-      label,
-      lat: String(latVal),
-      lng: String(lngVal),
-    }));
-
-    toast.success(lang === 'vi' ? 'Đã lấy vị trí GPS!' : 'Acquired current GPS!');
+    setWaitingForLocation(true);
+    if (gpsLoc.status !== 'active' && gpsLoc.status !== 'manual') requestLocation();
   };
 
   const handleSaveLocation = async () => {
-    if (!newLocation.type || !newLocation.label) return;
+    const lat = Number(newLocation.lat);
+    const lng = Number(newLocation.lng);
+    if (!newLocation.type || !newLocation.label || !newLocation.lat.trim() || !newLocation.lng.trim() || !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+      toast.error(lang === 'vi' ? 'Cần có tọa độ thật trước khi lưu địa điểm.' : 'A valid location is required before saving.');
+      return;
+    }
     setSavingLocation(true);
     try {
-      const lat = parseFloat(newLocation.lat) || 21.0285;
-      const lng = parseFloat(newLocation.lng) || 105.8542;
       await locationsApi.upsert({
         location_type: newLocation.type as 'home' | 'work' | 'school',
         label: newLocation.label,
@@ -161,7 +163,7 @@ const Profile = () => {
 
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
-      <ThematicWatermark variant="minimal" />
+      <ThematicWatermark />
 
       <motion.div
         variants={stagger}
@@ -203,8 +205,8 @@ const Profile = () => {
                 <h2 className="font-heading text-lg font-extrabold text-foreground">
                   {status.isComplete
                     ? lang === 'vi'
-                      ? 'Hồ sơ đã hoàn thành 100%'
-                      : 'Profile 100% Complete'
+                      ? 'Thông tin thiết yếu đã đầy đủ'
+                      : 'Essential information complete'
                     : lang === 'vi'
                     ? `Độ hoàn thiện hồ sơ: ${status.score}%`
                     : `Profile Completeness: ${status.score}%`}
@@ -213,8 +215,8 @@ const Profile = () => {
               <p className="text-xs text-muted-foreground">
                 {status.isComplete
                   ? lang === 'vi'
-                    ? 'Tài khoản của bạn đã đầy đủ các thông tin thiết yếu để cá nhân hóa cảnh báo AQI.'
-                    : 'Your profile has all essential fields for personalized AQI alerts.'
+                    ? 'Các trường cơ bản đã đủ; quyền đồng ý dữ liệu được quản lý riêng bên dưới.'
+                    : 'Basic fields are complete; data consent is managed separately below.'
                   : lang === 'vi'
                   ? `Còn thiếu ${status.missingFields.length} thông tin quan trọng: ${status.missingFields
                       .map((f) => f.labelVi)
@@ -347,7 +349,7 @@ const Profile = () => {
                       <span className="text-[10px] text-muted-foreground font-heading uppercase font-bold tracking-wider">
                         {typeObj ? (lang === 'vi' ? typeObj.labelVi : typeObj.labelEn) : loc.location_type}
                       </span>
-                      <p className="text-sm font-heading font-semibold text-foreground truncate">{loc.label}</p>
+                      <p className="text-sm font-heading font-semibold text-foreground truncate">{localizeDemoText(loc.label, lang)}</p>
                     </div>
                     <Button variant="ghost" size="sm" onClick={() => handleDeleteLocation(loc.id)}>
                       <Trash2 className="w-4 h-4 text-destructive" />
@@ -418,10 +420,15 @@ const Profile = () => {
                 </Button>
               </div>
 
+              <div className="grid grid-cols-2 gap-2">
+                <Input type="number" step="any" min={-90} max={90} placeholder={lang === 'vi' ? 'Vĩ độ' : 'Latitude'} aria-label={lang === 'vi' ? 'Vĩ độ' : 'Latitude'} value={newLocation.lat} onChange={(e) => setNewLocation((prev) => ({ ...prev, lat: e.target.value }))} />
+                <Input type="number" step="any" min={-180} max={180} placeholder={lang === 'vi' ? 'Kinh độ' : 'Longitude'} aria-label={lang === 'vi' ? 'Kinh độ' : 'Longitude'} value={newLocation.lng} onChange={(e) => setNewLocation((prev) => ({ ...prev, lng: e.target.value }))} />
+              </div>
+
               <Button
                 size="sm"
                 onClick={handleSaveLocation}
-                disabled={!newLocation.type || !newLocation.label || savingLocation}
+                disabled={!newLocation.type || !newLocation.label || !newLocation.lat.trim() || !newLocation.lng.trim() || savingLocation}
                 className="font-heading text-xs gap-1.5"
               >
                 {savingLocation ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}

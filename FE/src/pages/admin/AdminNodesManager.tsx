@@ -22,16 +22,19 @@ import {
   Sun,
   ShieldCheck,
 } from 'lucide-react';
+import { useAppLang } from '@/hooks/use-app-lang';
+import { localizeDemoText } from '@/lib/localize-demo';
 
 import { nodesApi } from '@/integrations/api';
-import { MOCK_NODES } from './AdminDashboard';
-import { MOCK_ORGS } from './AdminOrgsManager';
 import { toast } from 'sonner';
+import { isDemoMode } from '@/lib/demo/demo-mode';
 
 export default function AdminNodesManager() {
-  const [nodes, setNodes] = useState<any[]>(MOCK_NODES);
-  const [orgs, setOrgs] = useState<any[]>(MOCK_ORGS);
-  const [loading, setLoading] = useState(false);
+  const lang = useAppLang();
+  const [nodes, setNodes] = useState<any[]>([]);
+  const [orgs, setOrgs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   // Search & Filters state
   const [searchTerm, setSearchTerm] = useState('');
@@ -49,20 +52,18 @@ export default function AdminNodesManager() {
   const [locationName, setLocationName] = useState('');
   const [selectedOrgId, setSelectedOrgId] = useState('');
   const [editionType, setEditionType] = useState('outdoor');
-  const [lat, setLat] = useState('21.0285');
-  const [lng, setLng] = useState('105.8542');
+  const [lat, setLat] = useState('');
+  const [lng, setLng] = useState('');
   const [creating, setCreating] = useState(false);
 
   const fetchData = async () => {
     try {
-      const [nData, oData] = await Promise.all([
-        nodesApi.listNodes().catch(() => []),
-        nodesApi.listOrganizations().catch(() => []),
-      ]);
-      if (Array.isArray(nData) && nData.length > 0) setNodes(nData);
-      if (Array.isArray(oData) && oData.length > 0) setOrgs(oData);
+      const [nData, oData] = await Promise.all([nodesApi.listNodes(), nodesApi.listOrganizations()]);
+      if (Array.isArray(nData) && (!isDemoMode() || nData.length)) setNodes(nData);
+      if (Array.isArray(oData) && (!isDemoMode() || oData.length)) setOrgs(oData);
+      setError(false);
     } catch {
-      /* fallback */
+      if (!isDemoMode()) setError(true);
     } finally {
       setLoading(false);
     }
@@ -91,7 +92,10 @@ export default function AdminNodesManager() {
           : n.organization_id === orgFilter || n.organization_name === orgFilter;
 
       const matchesEdition =
-        editionFilter === 'all' || n.edition_type === editionFilter;
+        editionFilter === 'all' ||
+        n.edition_type === editionFilter ||
+        (editionFilter === 'outdoor' && n.edition === 'outdoor_solar') ||
+        (editionFilter === 'indoor' && n.edition === 'indoor_grid');
 
       return matchesSearch && matchesStatus && matchesOrg && matchesEdition;
     });
@@ -100,6 +104,12 @@ export default function AdminNodesManager() {
   const handleCreateNode = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!chipId || !name) return;
+    const nodeLat = Number(lat);
+    const nodeLng = Number(lng);
+    if (!lat.trim() || !lng.trim() || !Number.isFinite(nodeLat) || !Number.isFinite(nodeLng) || Math.abs(nodeLat) > 90 || Math.abs(nodeLng) > 180) {
+      toast.error(lang === 'vi' ? 'Hãy nhập tọa độ thật, hợp lệ cho node.' : 'Enter valid, real coordinates for this node.');
+      return;
+    }
 
     setCreating(true);
     try {
@@ -109,48 +119,12 @@ export default function AdminNodesManager() {
           name,
           location_name: locationName || 'Khu vực chính',
           organization_id: selectedOrgId || undefined,
-          lat: parseFloat(lat) || 21.0285,
-          lng: parseFloat(lng) || 105.8542,
-        })
-        .catch(() => null);
-
-      if (created) {
-        setNodes((prev) => [created, ...prev]);
-      } else {
-        const orgObj = orgs.find((o) => o.id === selectedOrgId);
-        const isOutdoor = editionType === 'outdoor';
-        const localNode = {
-          id: `node-${Date.now()}`,
-          chip_id: chipId,
-          name,
-          edition: isOutdoor ? '☀️ Outdoor Solar Edition' : '🔌 Indoor Campus Grid Edition',
-          edition_type: editionType,
-          location_name: locationName || 'Khu vực chính',
-          organization_name: orgObj?.name || null,
-          organization_id: selectedOrgId || null,
-          status: 'online',
-          aqi: 35,
-          pm25: 14.0,
-          pm10: 24.0,
-          temperature: 30.0,
-          humidity: 70,
-          co2: 400,
-          voc_index: 30,
-          uv_index: isOutdoor ? 6.5 : 1.5,
-          battery: isOutdoor ? 98 : 100,
-          rssi: -55,
-          mcu: 'ESP32-S3 (Anten IPEX 8dBi)',
-          power_source: isOutdoor
-            ? 'Solar Panel 5V/6W + 2x 18650 Battery'
-            : 'Adapter 5V/2A Type-C 24/7',
-          sensors: isOutdoor
-            ? ['Winsen ZH03B Laser', 'Sensirion SHT30', 'Winsen ZE12A (CO/NO2/SO2/O3)', 'UVM-30A UV Sensor']
-            : ['Winsen ZH03B Laser', 'Sensirion SHT30', 'Winsen ZE12A', 'Winsen MH-Z19C NDIR CO2', 'Sensirion SGP40 VOCs'],
-        };
-        setNodes((prev) => [localNode, ...prev]);
-      }
-
-      toast.success(`Đã đăng ký thành công IoT Node "${name}"!`);
+          lat: nodeLat,
+          lng: nodeLng,
+          edition: editionType === 'indoor' ? 'indoor_grid' : 'outdoor_solar',
+        });
+      setNodes((prev) => [created, ...prev]);
+      toast.success(lang === 'vi' ? `Đã đăng ký IoT Node "${name}".` : `IoT node "${name}" registered.`);
       setShowAddModal(false);
       setChipId('');
       setName('');
@@ -164,7 +138,7 @@ export default function AdminNodesManager() {
 
   const handleAssignOrg = async (nodeId: string, orgId: string) => {
     try {
-      await nodesApi.assignNodeToOrg(nodeId, orgId).catch(() => null);
+      await nodesApi.assignNodeToOrg(nodeId, orgId);
       const orgObj = orgs.find((o) => o.id === orgId);
       setNodes((prev) =>
         prev.map((n) =>
@@ -186,13 +160,16 @@ export default function AdminNodesManager() {
       }
       toast.success('Đã gán lại Tổ chức sở hữu cho Trạm!');
     } catch (err) {
-      console.error(err);
+      toast.error('Không thể gán tổ chức cho trạm. Vui lòng kiểm tra quyền và thử lại.');
     }
   };
 
   const handleSendRemoteCommand = (command: string) => {
-    toast.success(`Đã gửi lệnh từ xa "${command}" tới trạm ${selectedNode?.chip_id}!`);
+    toast.info(`Lệnh "${command}" chưa được kết nối với thiết bị. Không có lệnh nào được gửi.`);
   };
+
+  if (loading) return <div className="p-6 text-white/70">{lang === 'vi' ? 'Đang tải danh sách trạm...' : 'Loading station list...'}</div>;
+  if (error) return <div className="p-6 text-amber-300" role="alert">{lang === 'vi' ? 'Không thể tải trạm và tổ chức. Vui lòng kiểm tra quyền quản trị và kết nối máy chủ.' : 'Unable to load stations and organizations. Check administrator access and the server connection.'}</div>;
 
   return (
     <div className="space-y-6">
@@ -201,7 +178,7 @@ export default function AdminNodesManager() {
         <div className="flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
           <span>
-            📌 <strong>[QUẢN LÝ THIẾT BỊ HARDWARE SPEC 2.0]</strong> — Chuẩn hóa 2 phiên bản: ☀️ Outdoor Solar Edition (Pin Solar 18650) & 🔌 Indoor Campus Grid Edition (Adapter 5V Type-C).
+            📌 <strong>{lang === 'vi' ? '[QUẢN LÝ THIẾT BỊ HARDWARE SPEC 2.0]' : '[HARDWARE SPEC 2.0 DEVICE MANAGEMENT]'}</strong> — {lang === 'vi' ? 'Chuẩn hóa 2 phiên bản: ☀️ Outdoor Solar Edition (Pin Solar 18650) & 🔌 Indoor Campus Grid Edition (Adapter 5V Type-C).' : 'Two standardized editions: ☀️ Outdoor Solar Edition (18650 solar battery) and 🔌 Indoor Campus Grid Edition (5V Type-C adapter).'}
           </span>
         </div>
         <span className="hidden sm:inline-block px-2 py-0.5 rounded bg-amber-500/20 text-[10px] font-bold text-amber-200">
@@ -214,10 +191,10 @@ export default function AdminNodesManager() {
         <div>
           <h2 className="font-heading text-lg font-bold text-white flex items-center gap-2">
             <Cpu className="w-5 h-5 text-cyan-400" />
-            Quản lý Mạng lưới IoT Nodes ({filteredNodes.length}/{nodes.length})
+            {lang === 'vi' ? 'Quản lý Mạng lưới IoT Nodes' : 'IoT Node Network Management'} ({filteredNodes.length}/{nodes.length})
           </h2>
           <p className="text-xs text-white/60">
-            Tìm kiếm, lọc phiên bản Outdoor/Indoor và bấm mở Pop-up chi tiết linh kiện BOM & cảm biến.
+            {lang === 'vi' ? 'Tìm kiếm, lọc phiên bản Outdoor/Indoor và bấm mở Pop-up chi tiết linh kiện BOM & cảm biến.' : 'Search and filter Outdoor/Indoor editions, then inspect sensor and BOM details.'}
           </p>
         </div>
 
@@ -226,7 +203,7 @@ export default function AdminNodesManager() {
           className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-slate-950 font-heading text-xs font-bold flex items-center gap-2 shadow-lg shadow-cyan-500/20 transition-all shrink-0"
         >
           <Plus className="w-4 h-4" />
-          Đăng ký IoT Node Mới
+          {lang === 'vi' ? 'Đăng ký IoT Node Mới' : 'Register New IoT Node'}
         </button>
       </div>
 
@@ -237,7 +214,7 @@ export default function AdminNodesManager() {
           <Search className="w-4 h-4 text-white/40 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Tìm theo Tên trạm, Chip ID (AWNODE-HN01)..."
+            placeholder={lang === 'vi' ? 'Tìm theo Tên trạm, Chip ID (AWNODE-HN01)...' : 'Search station name or Chip ID (AWNODE-HN01)...'}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-900/80 border border-white/10 text-xs text-white placeholder:text-white/40 focus:outline-none focus:border-cyan-400 font-body"
@@ -259,7 +236,7 @@ export default function AdminNodesManager() {
             onChange={(e) => setEditionFilter(e.target.value)}
             className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-xs text-amber-300 font-heading focus:outline-none"
           >
-            <option value="all">-- Tất cả Phiên bản --</option>
+            <option value="all">-- {lang === 'vi' ? 'Tất cả Phiên bản' : 'All Editions'} --</option>
             <option value="outdoor">☀️ Outdoor Solar</option>
             <option value="indoor">🔌 Indoor Grid</option>
           </select>
@@ -270,9 +247,9 @@ export default function AdminNodesManager() {
           <SlidersHorizontal className="w-4 h-4 text-cyan-400 shrink-0 hidden sm:inline-block" />
           <div className="flex gap-1.5 bg-slate-900/60 p-1 rounded-xl border border-white/10 text-xs font-heading">
             {[
-              { key: 'all', label: 'Tất cả' },
+              { key: 'all', label: lang === 'vi' ? 'Tất cả' : 'All' },
               { key: 'online', label: 'Online' },
-              { key: 'warning', label: 'Cảnh báo' },
+              { key: 'warning', label: lang === 'vi' ? 'Cảnh báo' : 'Warning' },
               { key: 'offline', label: 'Offline' },
             ].map((st) => (
               <button
@@ -297,8 +274,8 @@ export default function AdminNodesManager() {
             onChange={(e) => setOrgFilter(e.target.value)}
             className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-xs text-cyan-300 font-heading focus:outline-none"
           >
-            <option value="all">-- Tất cả Tổ chức --</option>
-            <option value="unassigned">⚠️ Trụ tự do (Chưa gán)</option>
+            <option value="all">-- {lang === 'vi' ? 'Tất cả Tổ chức' : 'All Organizations'} --</option>
+            <option value="unassigned">⚠️ {lang === 'vi' ? 'Trụ tự do (Chưa gán)' : 'Unassigned Node'}</option>
             {orgs.map((o) => (
               <option key={o.id} value={o.id}>
                 🏢 {o.name}
@@ -314,9 +291,9 @@ export default function AdminNodesManager() {
           const isOnline = node.status === 'online';
           const isWarning = node.status === 'warning';
           const isUnassigned = !node.organization_id && !node.organization_name;
-          const isOutdoor = node.edition_type === 'outdoor';
+          const isOutdoor = node.edition_type === 'outdoor' || node.edition === 'outdoor_solar';
           const aqiColor =
-            node.aqi <= 50
+            node.aqi == null ? 'text-slate-400 bg-slate-500/10 border-slate-500/30' : node.aqi <= 50
               ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
               : node.aqi <= 100
               ? 'text-amber-400 bg-amber-500/10 border-amber-500/30'
@@ -333,7 +310,7 @@ export default function AdminNodesManager() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <h3 className="font-heading font-bold text-sm text-white group-hover:text-cyan-300 transition-colors truncate">
-                      {node.name}
+                      {localizeDemoText(node.name, lang)}
                     </h3>
                   </div>
                   <div className="text-[10px] text-cyan-400 font-mono mt-0.5 flex items-center gap-1">
@@ -366,7 +343,7 @@ export default function AdminNodesManager() {
 
                 <div className="flex items-center gap-1.5 text-white/60">
                   <MapPin className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                  <span className="truncate">{node.location_name || 'Vị trí trạm'}</span>
+                  <span className="truncate">{localizeDemoText(node.location_name, lang) || (lang === 'vi' ? 'Vị trí trạm' : 'Station location')}</span>
                 </div>
 
                 <div className="flex items-center gap-1.5 text-white/60">
@@ -374,7 +351,7 @@ export default function AdminNodesManager() {
                   {isUnassigned ? (
                     <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-semibold flex items-center gap-1">
                       <AlertCircle className="w-3 h-3 text-amber-400" />
-                      Chưa gán (Trụ tự do)
+                      {lang === 'vi' ? 'Chưa gán (Trụ tự do)' : 'Unassigned Node'}
                     </span>
                   ) : (
                     <span className="truncate text-white/90 font-medium">
@@ -388,13 +365,13 @@ export default function AdminNodesManager() {
               <div className="pt-2.5 border-t border-white/10 flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2">
                   <span className={`px-2 py-0.5 rounded font-bold border text-xs font-heading ${aqiColor}`}>
-                    AQI {node.aqi}
+                    AQI {node.aqi ?? '—'}
                   </span>
                   <span className="text-[11px] text-white/50">{node.pm25} µg/m³</span>
                 </div>
 
                 <span className="text-[11px] font-heading font-semibold text-cyan-400 group-hover:text-cyan-300 flex items-center gap-1">
-                  Chi tiết hardware <ChevronRight className="w-3.5 h-3.5" />
+                  {lang === 'vi' ? 'Chi tiết hardware' : 'Hardware details'} <ChevronRight className="w-3.5 h-3.5" />
                 </span>
               </div>
             </div>
@@ -405,7 +382,7 @@ export default function AdminNodesManager() {
       {filteredNodes.length === 0 && (
         <div className="p-8 text-center rounded-2xl bg-white/5 border border-white/10 space-y-2 text-white/50 text-sm">
           <Info className="w-6 h-6 text-cyan-400 mx-auto" />
-          <p>Không tìm thấy IoT Node nào phù hợp với bộ lọc.</p>
+          <p>{lang === 'vi' ? 'Không tìm thấy IoT Node nào phù hợp với bộ lọc.' : 'No IoT nodes match the current filters.'}</p>
         </div>
       )}
 
@@ -459,48 +436,48 @@ export default function AdminNodesManager() {
             {/* Grid 1: Các chỉ số telemetry kỹ thuật chi tiết */}
             <div className="space-y-2">
               <h4 className="font-heading font-bold text-xs uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
-                <Activity className="w-4 h-4" /> Telemetry Môi trường Realtime
+                <Activity className="w-4 h-4" /> {lang === 'vi' ? 'Telemetry Môi trường Realtime' : 'Real-time Environmental Telemetry'}
               </h4>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
                   <span className="text-white/50 text-[10px]">Bụi ZH03B Laser PM2.5</span>
-                  <div className="font-heading font-bold text-base text-white">{selectedNode.pm25} µg/m³</div>
+                  <div className="font-heading font-bold text-base text-white">{selectedNode.pm25 == null ? '—' : `${selectedNode.pm25} µg/m³`}</div>
                 </div>
 
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
                   <span className="text-white/50 text-[10px]">Bụi PM10</span>
-                  <div className="font-heading font-bold text-base text-white">{selectedNode.pm10} µg/m³</div>
+                  <div className="font-heading font-bold text-base text-white">{selectedNode.pm10 == null ? '—' : `${selectedNode.pm10} µg/m³`}</div>
                 </div>
 
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
                   <span className="text-white/50 text-[10px]">Chỉ số AQI</span>
-                  <div className="font-heading font-bold text-base text-amber-300">AQI {selectedNode.aqi}</div>
+                  <div className="font-heading font-bold text-base text-amber-300">AQI {selectedNode.aqi ?? '—'}</div>
                 </div>
 
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
                   <span className="text-white/50 text-[10px]">Sensirion SHT30 Nhiệt/Ẩm</span>
-                  <div className="font-heading font-bold text-base text-white">{selectedNode.temperature}°C · {selectedNode.humidity}%</div>
+                  <div className="font-heading font-bold text-base text-white">{selectedNode.temperature == null ? '—' : `${selectedNode.temperature}°C`} · {selectedNode.humidity == null ? '—' : `${selectedNode.humidity}%`}</div>
                 </div>
 
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
                   <span className="text-white/50 text-[10px]">Khí độc ZE12A (CO/NO2/SO2/O3)</span>
-                  <div className="font-heading font-bold text-base text-cyan-300">{selectedNode.co2 || 410} ppm</div>
+                  <div className="font-heading font-bold text-base text-cyan-300">{selectedNode.co2 == null ? '—' : `${selectedNode.co2} ppm`}</div>
                 </div>
 
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
                   <span className="text-white/50 text-[10px]">Sensirion SGP40 VOCs</span>
-                  <div className="font-heading font-bold text-base text-amber-400">{selectedNode.voc_index || 45}</div>
+                  <div className="font-heading font-bold text-base text-amber-400">{selectedNode.voc_index ?? '—'}</div>
                 </div>
 
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
                   <span className="text-white/50 text-[10px]">Cường độ UV (LTR-390/UVM-30A)</span>
-                  <div className="font-heading font-bold text-base text-purple-400">UV Index {selectedNode.uv_index || 6.2}</div>
+                  <div className="font-heading font-bold text-base text-purple-400">UV Index {selectedNode.uv_index ?? '—'}</div>
                 </div>
 
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
                   <span className="text-white/50 text-[10px]">Pin & Tín hiệu Sóng</span>
-                  <div className="font-heading font-bold text-sm text-emerald-400">🔋 {selectedNode.battery}% · {selectedNode.rssi} dBm</div>
+                  <div className="font-heading font-bold text-sm text-emerald-400">🔋 {selectedNode.battery == null ? '—' : `${selectedNode.battery}%`} · {selectedNode.rssi == null ? '—' : `${selectedNode.rssi} dBm`}</div>
                 </div>
               </div>
             </div>
@@ -508,7 +485,7 @@ export default function AdminNodesManager() {
             {/* Grid 2: Thông tin Linh kiện Phần cứng chuẩn BOM (IOT_NODE_HARDWARE_SPECIFICATION.md) */}
             <div className="space-y-2 pt-2 border-t border-white/10">
               <h4 className="font-heading font-bold text-xs uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
-                <Zap className="w-4 h-4" /> Danh mục Linh kiện Phần cứng BOM (Hardware Spec)
+                <Zap className="w-4 h-4" /> {lang === 'vi' ? 'Danh mục Linh kiện Phần cứng BOM' : 'Hardware BOM Components'}
               </h4>
               <div className="p-3.5 rounded-xl bg-slate-950/60 border border-white/10 text-xs space-y-2">
                 <div className="flex items-center justify-between">
@@ -537,14 +514,14 @@ export default function AdminNodesManager() {
               <div className="flex items-center justify-between">
                 <label className="font-heading font-bold text-xs text-white flex items-center gap-1.5">
                   <Building2 className="w-4 h-4 text-cyan-400" />
-                  Gán Tổ chức / Doanh nghiệp Quản lý:
+                  {lang === 'vi' ? 'Gán Tổ chức / Doanh nghiệp Quản lý' : 'Assign Managing Organization'}:
                 </label>
                 <select
                   value={selectedNode.organization_id || ''}
                   onChange={(e) => handleAssignOrg(selectedNode.id, e.target.value)}
                   className="px-3 py-1.5 rounded-xl bg-slate-800 border border-white/15 text-xs text-cyan-300 font-heading focus:outline-none"
                 >
-                  <option value="">-- Trụ tự do (Chưa gán) --</option>
+                  <option value="">-- {lang === 'vi' ? 'Trụ tự do (Chưa gán)' : 'Unassigned Node'} --</option>
                   {orgs.map((o) => (
                     <option key={o.id} value={o.id}>
                       {o.name}
@@ -560,14 +537,14 @@ export default function AdminNodesManager() {
                   className="flex-1 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-heading font-semibold text-xs flex items-center justify-center gap-1.5"
                 >
                   <RefreshCw className="w-3.5 h-3.5 text-cyan-400" />
-                  Khởi động lại (Reboot)
+                  {lang === 'vi' ? 'Khởi động lại' : 'Reboot'}
                 </button>
                 <button
                   onClick={() => handleSendRemoteCommand('Deep Sleep Mode')}
                   className="flex-1 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-heading font-semibold text-xs flex items-center justify-center gap-1.5"
                 >
                   <Battery className="w-3.5 h-3.5 text-amber-400" />
-                  Chế độ Deep Sleep
+                  {lang === 'vi' ? 'Chế độ Deep Sleep' : 'Deep Sleep Mode'}
                 </button>
               </div>
             </div>
@@ -590,7 +567,7 @@ export default function AdminNodesManager() {
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <h3 className="font-heading font-bold text-base text-white flex items-center gap-2">
                 <Cpu className="w-5 h-5 text-cyan-400" />
-                Đăng ký IoT Node Mới
+                {lang === 'vi' ? 'Đăng ký IoT Node Mới' : 'Register New IoT Node'}
               </h3>
               <button
                 onClick={() => setShowAddModal(false)}
@@ -603,7 +580,7 @@ export default function AdminNodesManager() {
             <form onSubmit={handleCreateNode} className="space-y-3 text-xs font-body">
               <div>
                 <label className="block text-white/70 mb-1 font-heading font-semibold">
-                  Mã Hardware Chip ID *
+                  {lang === 'vi' ? 'Mã Hardware Chip ID' : 'Hardware Chip ID'} *
                 </label>
                 <input
                   type="text"
@@ -617,7 +594,7 @@ export default function AdminNodesManager() {
 
               <div>
                 <label className="block text-white/70 mb-1 font-heading font-semibold">
-                  Tên gợi nhớ Trạm đo *
+                  {lang === 'vi' ? 'Tên gợi nhớ Trạm đo' : 'Station Display Name'} *
                 </label>
                 <input
                   type="text"
@@ -631,7 +608,7 @@ export default function AdminNodesManager() {
 
               <div>
                 <label className="block text-white/70 mb-1 font-heading font-semibold">
-                  Phiên bản Phần cứng (Edition)
+                  {lang === 'vi' ? 'Phiên bản Phần cứng' : 'Hardware Edition'}
                 </label>
                 <select
                   value={editionType}
@@ -645,14 +622,14 @@ export default function AdminNodesManager() {
 
               <div>
                 <label className="block text-white/70 mb-1 font-heading font-semibold">
-                  Tổ chức sở hữu (Tùy chọn)
+                  {lang === 'vi' ? 'Tổ chức sở hữu (Tùy chọn)' : 'Owning Organization (Optional)'}
                 </label>
                 <select
                   value={selectedOrgId}
                   onChange={(e) => setSelectedOrgId(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-white/10 text-white focus:outline-none focus:border-cyan-400"
                 >
-                  <option value="">-- Chưa gán (Trụ tự do) --</option>
+                  <option value="">-- {lang === 'vi' ? 'Chưa gán (Trụ tự do)' : 'Unassigned Node'} --</option>
                   {orgs.map((o) => (
                     <option key={o.id} value={o.id}>
                       {o.name}
@@ -694,14 +671,14 @@ export default function AdminNodesManager() {
                   onClick={() => setShowAddModal(false)}
                   className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white font-heading font-semibold"
                 >
-                  Hủy
+                  {lang === 'vi' ? 'Hủy' : 'Cancel'}
                 </button>
                 <button
                   type="submit"
                   disabled={creating}
                   className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-heading font-bold"
                 >
-                  {creating ? 'Đang tạo...' : 'Xác nhận Đăng ký'}
+                  {creating ? (lang === 'vi' ? 'Đang tạo...' : 'Creating...') : (lang === 'vi' ? 'Xác nhận Đăng ký' : 'Confirm Registration')}
                 </button>
               </div>
             </form>

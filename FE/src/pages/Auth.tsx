@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Eye, EyeOff, Home, Loader2, Lock, Mail, Wind, Zap, Shield } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Home, Loader2, Lock, Mail, Wind, Zap } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/use-auth';
 import { toast } from 'sonner';
+import { getStoredLanguage, persistLanguage } from '@/lib/language';
 
 type OAuthProvider = 'google' | 'apple';
 
@@ -26,6 +27,7 @@ const AppleIcon = () => (
 
 const Auth = () => {
   const navigate = useNavigate();
+  const [lang, setLang] = useState<'vi' | 'en'>(getStoredLanguage);
   const { user, loading, onboardingCompleted, signIn, signUp, demoLogin, signInWithGoogle } =
     useAuth();
   const [tab, setTab] = useState<'login' | 'signup'>('login');
@@ -47,13 +49,13 @@ const Auth = () => {
     try {
       if (tab === 'login') {
         await signIn(email, password);
-        toast.success('Đăng nhập thành công!');
+        toast.success(lang === 'vi' ? 'Đăng nhập thành công!' : 'Signed in successfully!');
       } else {
         await signUp(email, password, displayName);
-        toast.success('Đăng ký thành công. Vui lòng kiểm tra email.');
+        toast.success(lang === 'vi' ? 'Tài khoản đã được tạo và đăng nhập.' : 'Account created and signed in.');
       }
     } catch (err: any) {
-      toast.error(err.message || 'Có lỗi xảy ra');
+      toast.error(lang === 'vi' ? (err.message || 'Có lỗi xảy ra') : 'Could not complete authentication. Check your details and try again.');
     } finally {
       setSubmitting(false);
     }
@@ -61,7 +63,7 @@ const Auth = () => {
 
   const handleOAuth = async (provider: OAuthProvider) => {
     if (provider !== 'google') {
-      toast.info('Hiện chỉ hỗ trợ đăng nhập bằng Google.');
+      toast.info(lang === 'vi' ? 'Hiện chỉ hỗ trợ đăng nhập bằng Google.' : 'Only Google sign-in is currently available.');
       return;
     }
 
@@ -75,9 +77,9 @@ const Auth = () => {
 
     try {
       await demoLogin();
-      toast.success('Đăng nhập demo thành công!');
+      toast.success(lang === 'vi' ? 'Đã mở chế độ demo!' : 'Demo mode started!');
     } catch (err: any) {
-      toast.error(err.message || 'Không thể đăng nhập demo');
+      toast.error(lang === 'vi' ? (err.message || 'Không thể mở demo') : 'Could not start demo mode.');
     } finally {
       setSubmitting(false);
     }
@@ -87,12 +89,15 @@ const Auth = () => {
     <div className="min-h-screen bg-background flex flex-col lg:flex-row overflow-y-auto relative">
       <div className="absolute top-3 left-3 z-30 flex gap-2">
         <Button variant="outline" size="sm" onClick={() => navigate(-1)} className="h-9 gap-1.5 font-heading text-xs bg-background/80 backdrop-blur">
-          <ArrowLeft className="w-4 h-4" /> Quay lại
+          <ArrowLeft className="w-4 h-4" /> {lang === 'vi' ? 'Quay lại' : 'Back'}
         </Button>
         <Button variant="outline" size="sm" onClick={() => navigate('/')} className="h-9 gap-1.5 font-heading text-xs bg-background/80 backdrop-blur">
-          <Home className="w-4 h-4" /> Trang chủ
+          <Home className="w-4 h-4" /> {lang === 'vi' ? 'Trang chủ' : 'Home'}
         </Button>
       </div>
+      <Button variant="outline" size="sm" onClick={() => { const next = lang === 'vi' ? 'en' : 'vi'; persistLanguage(next); setLang(next); }} className="absolute top-3 right-3 z-30 h-9 font-heading text-xs bg-background/80 backdrop-blur" aria-label={lang === 'vi' ? 'Chuyển sang tiếng Anh' : 'Switch to Vietnamese'}>
+        {lang === 'vi' ? 'EN' : 'VI'}
+      </Button>
 
       <div className="hidden lg:flex lg:w-1/2 bg-primary relative overflow-hidden items-center justify-center p-12">
         <div className="absolute inset-0 opacity-10">
@@ -107,10 +112,10 @@ const Auth = () => {
             <span className="font-heading text-3xl font-bold tracking-tight">AirWeave</span>
           </div>
           <h1 className="font-heading text-4xl font-extrabold leading-tight mb-4">
-            Biến dữ liệu môi trường thành hành động
+            {lang === 'vi' ? 'Biến dữ liệu môi trường thành hành động' : 'Turn environmental data into action'}
           </h1>
           <p className="text-lg opacity-80 font-body leading-relaxed">
-            Theo dõi chất lượng không khí thời gian thực, nhận gợi ý cá nhân hóa và bảo vệ sức khỏe gia đình bạn mỗi ngày.
+            {lang === 'vi' ? 'Theo dõi chất lượng không khí cùng nguồn dữ liệu rõ ràng, cảnh báo theo ngưỡng và gợi ý khi có đủ thông tin.' : 'Track air quality with clear data sources, threshold alerts, and guidance when enough information is available.'}
           </p>
         </div>
       </div>
@@ -134,33 +139,33 @@ const Auth = () => {
                   tab === value ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                {value === 'login' ? 'Đăng nhập' : 'Đăng ký'}
+                {value === 'login' ? (lang === 'vi' ? 'Đăng nhập' : 'Sign in') : (lang === 'vi' ? 'Đăng ký' : 'Sign up')}
               </button>
             ))}
           </div>
 
           <div className="space-y-2 mb-5">
             <Button type="button" variant="outline" className="w-full font-heading font-semibold gap-2 h-11" onClick={() => handleOAuth('google')} disabled={submitting}>
-              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <GoogleIcon />} Tiếp tục với Google
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <GoogleIcon />} {lang === 'vi' ? 'Tiếp tục với Google' : 'Continue with Google'}
             </Button>
-            <Button type="button" variant="outline" className="w-full font-heading font-semibold gap-2 h-11 opacity-60" disabled title="Đăng nhập Apple sẽ được bổ sung sau">
-              <AppleIcon /> Apple (sắp ra mắt)
+            <Button type="button" variant="outline" className="w-full font-heading font-semibold gap-2 h-11 opacity-60" disabled title={lang === 'vi' ? 'Đăng nhập Apple chưa khả dụng' : 'Apple sign-in is unavailable'}>
+              <AppleIcon /> Apple ({lang === 'vi' ? 'chưa khả dụng' : 'unavailable'})
             </Button>
-            <Button type="button" variant="outline" className="w-full font-heading font-semibold gap-2 h-11 opacity-60" disabled title="Đăng nhập Facebook sẽ được bổ sung sau">
-              <span className="text-[#1877F2] font-black text-lg">f</span> Facebook (sắp ra mắt)
+            <Button type="button" variant="outline" className="w-full font-heading font-semibold gap-2 h-11 opacity-60" disabled title={lang === 'vi' ? 'Đăng nhập Facebook chưa khả dụng' : 'Facebook sign-in is unavailable'}>
+              <span className="text-[#1877F2] font-black text-lg">f</span> Facebook ({lang === 'vi' ? 'chưa khả dụng' : 'unavailable'})
             </Button>
           </div>
 
           <div className="flex items-center gap-3 mb-5">
             <div className="flex-1 h-px bg-border" />
-            <span className="text-xs text-muted-foreground font-body uppercase tracking-wider">hoặc</span>
+            <span className="text-xs text-muted-foreground font-body uppercase tracking-wider">{lang === 'vi' ? 'hoặc' : 'or'}</span>
             <div className="flex-1 h-px bg-border" />
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {tab === 'signup' && (
               <div className="relative animate-fade-in">
-                <Input type="text" placeholder="Tên hiển thị" value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="pl-10" />
+                <Input type="text" placeholder={lang === 'vi' ? 'Tên hiển thị' : 'Display name'} value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="pl-10" />
                 <Wind className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               </div>
             )}
@@ -173,7 +178,7 @@ const Auth = () => {
             <div className="relative">
               <Input
                 type={showPassword ? 'text' : 'password'}
-                placeholder="Mật khẩu"
+                placeholder={lang === 'vi' ? 'Mật khẩu' : 'Password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -192,13 +197,13 @@ const Auth = () => {
 
             <Button type="submit" className="w-full font-heading font-semibold" disabled={submitting}>
               {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              {tab === 'login' ? 'Đăng nhập' : 'Tạo tài khoản'}
+              {tab === 'login' ? (lang === 'vi' ? 'Đăng nhập' : 'Sign in') : (lang === 'vi' ? 'Tạo tài khoản' : 'Create account')}
             </Button>
           </form>
 
           <div className="flex items-center gap-3 my-6">
             <div className="flex-1 h-px bg-border" />
-            <span className="text-xs text-muted-foreground font-body">hoặc</span>
+            <span className="text-xs text-muted-foreground font-body">{lang === 'vi' ? 'hoặc' : 'or'}</span>
             <div className="flex-1 h-px bg-border" />
           </div>
 
@@ -209,42 +214,16 @@ const Auth = () => {
             disabled={submitting}
           >
             <Zap className="w-4 h-4 text-primary" />
-            Trải nghiệm nhanh (Demo)
+            {lang === 'vi' ? 'Trải nghiệm nhanh (Demo)' : 'Quick demo'}
           </Button>
-
-          {/* Cổng đăng nhập Quản trị viên / Admin Entry Point */}
-          <div className="mt-5 p-3.5 rounded-xl bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-950/20 border border-amber-500/30 text-center space-y-2">
-            <div className="flex items-center justify-center gap-1.5 text-xs font-heading font-bold text-amber-400">
-              <Shield className="w-4 h-4 text-amber-400 animate-pulse" />
-              Bạn là Quản trị viên / Quản lý Trạm IoT?
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              Truy cập Bảng điều khiển Quản trị IoT Nodes và Quản lý Tổ chức
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="w-full h-8 text-xs font-heading font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/40 gap-1.5 shadow-sm"
-              onClick={() => {
-                setEmail('admin@airweave.vn');
-                setPassword('admin');
-                toast.info('Đã điền tài khoản Admin (admin/admin)! Bấm Đăng nhập để vào Portal.');
-                navigate('/admin');
-              }}
-            >
-              <Shield className="w-3.5 h-3.5" />
-              Vào Bảng điều khiển Quản trị (Admin Portal) →
-            </Button>
-          </div>
 
           {loading && (
             <p className="text-[11px] text-muted-foreground text-center mt-2 font-body">
-              Đang kiểm tra phiên đăng nhập của bạn...
+              {lang === 'vi' ? 'Đang kiểm tra phiên đăng nhập...' : 'Checking your session...'}
             </p>
           )}
           <p className="text-[11px] text-muted-foreground text-center mt-2 font-body">
-            Tự động đăng nhập với tài khoản demo, không cần đăng ký
+            {lang === 'vi' ? 'Chế độ demo chỉ dùng dữ liệu mô phỏng, không cần đăng ký.' : 'Demo mode uses simulated data and requires no registration.'}
           </p>
 
         </div>

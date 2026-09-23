@@ -5,6 +5,10 @@ import { useLiveAirContext } from '@/contexts/live-air-context';
 import { useWaqiStations } from '@/hooks/use-waqi-stations';
 import { communityApi } from '@/integrations/api';
 import { Button } from '@/components/ui/button';
+import { useAppLang } from '@/hooks/use-app-lang';
+import { localizeDemoText } from '@/lib/localize-demo';
+import { hasAirQualityReading } from '@/lib/air-quality';
+import { hasWeatherMetric } from '@/hooks/use-weather-data';
 
 /**
  * ESG-ready Environmental Data Transparency Dashboard (B2B/B2G demo).
@@ -15,6 +19,7 @@ import { Button } from '@/components/ui/button';
  * Does NOT claim verified ESG numbers. Does NOT mark community reports as verified.
  */
 export default function DataTransparency() {
+  const lang = useAppLang();
   const { weather, location, refreshData } = useLiveAirContext();
   const { stations, refresh: refreshStations } = useWaqiStations();
   const [reportsCount, setReportsCount] = useState<number | null>(null);
@@ -32,22 +37,30 @@ export default function DataTransparency() {
 
   const updatedAtMs = weather.updatedAt ? Date.parse(weather.updatedAt) : 0;
   const ageMin = updatedAtMs ? Math.round((Date.now() - updatedAtMs) / 60000) : null;
+  const hasReading = hasAirQualityReading(weather);
+  const hasLocation = location.status === 'active' || location.status === 'manual';
   const status =
     weather.loading
-      ? { label: 'Loading', tone: 'bg-muted text-muted-foreground' }
+      ? { label: lang === 'vi' ? 'Đang tải' : 'Loading', tone: 'bg-muted text-muted-foreground' }
       : weather.error
-      ? { label: 'Unavailable', tone: 'bg-red-500/15 text-red-600 dark:text-red-300' }
-      : !weather.aqi || weather.aqi <= 0
-      ? { label: 'Unavailable', tone: 'bg-muted text-muted-foreground' }
+      ? { label: lang === 'vi' ? 'Không khả dụng' : 'Unavailable', tone: 'bg-red-500/15 text-red-600 dark:text-red-300' }
+      : !hasReading
+      ? { label: lang === 'vi' ? 'Không khả dụng' : 'Unavailable', tone: 'bg-muted text-muted-foreground' }
+      : ageMin !== null && ageMin > 60
+      ? { label: lang === 'vi' ? 'Đã cũ' : 'Stale', tone: 'bg-amber-500/15 text-amber-600 dark:text-amber-300' }
+      : weather.source === 'demo'
+      ? { label: lang === 'vi' ? 'Mô phỏng' : 'Simulated', tone: 'bg-amber-500/15 text-amber-600 dark:text-amber-300' }
+      : weather.source === 'open-meteo'
+      ? { label: lang === 'vi' ? 'Mô hình ước tính' : 'Model estimate', tone: 'bg-amber-500/15 text-amber-600 dark:text-amber-300' }
       : ageMin === null
-      ? { label: 'Estimated', tone: 'bg-amber-500/15 text-amber-600 dark:text-amber-300' }
+      ? { label: lang === 'vi' ? 'Ước tính' : 'Estimated', tone: 'bg-amber-500/15 text-amber-600 dark:text-amber-300' }
       : ageMin <= 60
-      ? { label: 'Live', tone: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300' }
-      : { label: 'Stale', tone: 'bg-amber-500/15 text-amber-600 dark:text-amber-300' };
+      ? { label: lang === 'vi' ? 'Trực tiếp' : 'Live', tone: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300' }
+      : { label: lang === 'vi' ? 'Đã cũ' : 'Stale', tone: 'bg-amber-500/15 text-amber-600 dark:text-amber-300' };
 
-  const nearestStation = stations[0]?.name ?? weather.station ?? null;
+  const nearestStation = weather.station ?? null;
   const sourceLabel =
-    weather.source === 'waqi' ? 'WAQI · World Air Quality Index' : weather.source === 'open-meteo' ? 'Open-Meteo (estimated)' : weather.source || '—';
+    !hasReading ? '—' : weather.source === 'demo' ? (lang === 'vi' ? 'Dữ liệu mô phỏng AirWeave' : 'AirWeave simulated data') : weather.source === 'waqi' ? 'WAQI · World Air Quality Index' : weather.source === 'open-meteo' ? (lang === 'vi' ? 'Open-Meteo (ước tính)' : 'Open-Meteo (estimated)') : weather.source || '—';
 
   const handleExport = () => {
     const payload = {
@@ -56,20 +69,21 @@ export default function DataTransparency() {
       note: 'DEMO ONLY — not a verified ESG dataset. Verify with primary providers before publication.',
       location: {
         label: location.label,
-        lat: location.lat,
-        lng: location.lng,
+        lat: hasLocation ? location.lat : null,
+        lng: hasLocation ? location.lng : null,
         accuracy_m: location.accuracy,
         permission_state: location.permissionState,
       },
       air_quality: {
-        aqi: weather.aqi || null,
-        pm25: weather.pm25 || null,
-        pm10: weather.pm10 || null,
-        temperature_c: weather.temperature || null,
-        humidity_pct: weather.humidity || null,
-        wind_speed: weather.windSpeed || null,
-        wind_direction: weather.windDirection || null,
-        source: weather.source,
+        aqi: hasReading ? weather.aqi : null,
+        pm25: hasWeatherMetric(weather, 'pm25') ? weather.pm25 : null,
+        pm10: hasWeatherMetric(weather, 'pm10') ? weather.pm10 : null,
+        temperature_c: hasWeatherMetric(weather, 'temperature') ? weather.temperature : null,
+        humidity_pct: hasWeatherMetric(weather, 'humidity') ? weather.humidity : null,
+        wind_speed: hasWeatherMetric(weather, 'windSpeed') ? weather.windSpeed : null,
+        wind_direction: hasWeatherMetric(weather, 'windDirection') ? weather.windDirection : null,
+        source: hasReading ? weather.source : null,
+        metric_sources: hasReading ? weather.metricSources ?? null : null,
         nearest_station: nearestStation,
         snapshot_updated_at: weather.updatedAt || null,
         status: status.label,
@@ -93,7 +107,7 @@ export default function DataTransparency() {
       <div className="max-w-4xl mx-auto space-y-5">
         <div className="flex items-center justify-between gap-3">
           <Link to="/dashboard" className="inline-flex items-center gap-1.5 text-xs font-heading font-semibold text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="w-3.5 h-3.5" /> Dashboard
+            <ArrowLeft className="w-3.5 h-3.5" /> {lang === 'vi' ? 'Bảng điều khiển' : 'Dashboard'}
           </Link>
           <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-300 font-heading font-bold">
             DEMO
@@ -103,53 +117,52 @@ export default function DataTransparency() {
         <header className="space-y-1">
           <div className="flex items-center gap-2">
             <Database className="w-5 h-5 text-cyan-500" />
-            <h1 className="text-xl md:text-2xl font-heading font-black">AirWeave Data Transparency Dashboard</h1>
+            <h1 className="text-xl md:text-2xl font-heading font-black">{lang === 'vi' ? 'Bảng Minh bạch Dữ liệu AirWeave' : 'AirWeave Data Transparency Dashboard'}</h1>
           </div>
           <p className="text-sm text-muted-foreground">
-            ESG-ready environmental data preview · source, freshness, station, and verification status are always visible.
+            {lang === 'vi' ? 'Bản xem trước dữ liệu môi trường sẵn sàng cho ESG · luôn hiển thị nguồn, độ mới, trạm và trạng thái xác minh.' : 'ESG-ready environmental data preview · source, freshness, station, and verification status are always visible.'}
           </p>
         </header>
 
         <section className="rounded-2xl border border-border bg-card p-4 md:p-5 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-heading font-bold">Selected location</p>
-              <p className="text-base font-heading font-bold">{location.label || '—'}</p>
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-heading font-bold">{lang === 'vi' ? 'Vị trí đã chọn' : 'Selected location'}</p>
+              <p className="text-base font-heading font-bold">{localizeDemoText(location.label, lang) || '—'}</p>
               <p className="text-[11px] text-muted-foreground">
-                {location.lat?.toFixed(4)}, {location.lng?.toFixed(4)} · accuracy {location.accuracy ?? '—'}m
+                {location.lat?.toFixed(4)}, {location.lng?.toFixed(4)} · {lang === 'vi' ? 'độ chính xác' : 'accuracy'} {location.accuracy ?? '—'}m
               </p>
             </div>
             <div className="flex items-center gap-2">
               <span className={`px-2 py-0.5 rounded-full text-[11px] font-heading font-bold ${status.tone}`}>{status.label}</span>
               <Button size="sm" variant="outline" onClick={() => { refreshData(); refreshStations(); }}>
-                <RefreshCw className="w-3.5 h-3.5 mr-1" /> Refresh
+                <RefreshCw className="w-3.5 h-3.5 mr-1" /> {lang === 'vi' ? 'Làm mới' : 'Refresh'}
               </Button>
             </div>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Metric icon={<Wind className="w-4 h-4" />} label="AQI (US)" value={weather.aqi || '—'} />
-            <Metric label="PM2.5 µg/m³" value={weather.pm25 ? Math.round(weather.pm25) : '—'} />
-            <Metric label="PM10 µg/m³" value={weather.pm10 ? Math.round(weather.pm10) : '—'} />
-            <Metric icon={<MapPin className="w-4 h-4" />} label="Nearest station" value={nearestStation ?? '—'} />
+            <Metric icon={<Wind className="w-4 h-4" />} label="AQI (US)" value={hasReading ? weather.aqi : '—'} />
+            <Metric label="PM2.5 µg/m³" value={hasWeatherMetric(weather, 'pm25') ? Math.round(weather.pm25) : '—'} />
+            <Metric label="PM10 µg/m³" value={hasWeatherMetric(weather, 'pm10') ? Math.round(weather.pm10) : '—'} />
+            <Metric icon={<MapPin className="w-4 h-4" />} label={lang === 'vi' ? 'Trạm tham chiếu' : 'Reference station'} value={nearestStation ?? '—'} />
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px] text-muted-foreground">
-            <div><span className="block uppercase tracking-wider font-heading font-bold text-[10px]">Source</span>{sourceLabel}</div>
-            <div><span className="block uppercase tracking-wider font-heading font-bold text-[10px]">Updated</span>{ageMin === null ? '—' : ageMin < 1 ? '<1 min ago' : `${ageMin} min ago`}</div>
-            <div><span className="block uppercase tracking-wider font-heading font-bold text-[10px]">Verification</span>Provider feed (not independently audited)</div>
-            <div className="flex items-center gap-1"><Users className="w-3 h-3" /> <span><span className="block uppercase tracking-wider font-heading font-bold text-[10px]">Community reports</span>{reportsCount ?? '—'} active (unverified)</span></div>
+            <div><span className="block uppercase tracking-wider font-heading font-bold text-[10px]">{lang === 'vi' ? 'Nguồn AQI' : 'AQI source'}</span>{sourceLabel}{hasWeatherMetric(weather, 'pm25') && weather.metricSources?.pm25 && weather.metricSources.pm25 !== weather.source ? <span className="block">PM: Open-Meteo</span> : null}</div>
+            <div><span className="block uppercase tracking-wider font-heading font-bold text-[10px]">{lang === 'vi' ? 'Cập nhật' : 'Updated'}</span>{ageMin === null ? '—' : ageMin < 1 ? (lang === 'vi' ? '<1 phút trước' : '<1 min ago') : `${ageMin} ${lang === 'vi' ? 'phút trước' : 'min ago'}`}</div>
+            <div><span className="block uppercase tracking-wider font-heading font-bold text-[10px]">{lang === 'vi' ? 'Xác minh' : 'Verification'}</span>{lang === 'vi' ? 'Nguồn nhà cung cấp (chưa kiểm toán độc lập)' : 'Provider feed (not independently audited)'}</div>
+            <div className="flex items-center gap-1"><Users className="w-3 h-3" /> <span><span className="block uppercase tracking-wider font-heading font-bold text-[10px]">{lang === 'vi' ? 'Báo cáo cộng đồng' : 'Community reports'}</span>{reportsCount ?? '—'} {lang === 'vi' ? 'đang hoạt động (chưa xác minh)' : 'active (unverified)'}</span></div>
           </div>
 
           <Button onClick={handleExport} className="w-full md:w-auto">
             <Download className="w-3.5 h-3.5 mr-1.5" />
-            Export demo JSON snapshot
+            {lang === 'vi' ? 'Xuất bản chụp JSON demo' : 'Export demo JSON snapshot'}
           </Button>
         </section>
 
         <p className="text-[10px] text-muted-foreground/70 leading-snug">
-          AirWeave does not claim verified ESG metrics. AQI/PM values come from third-party providers (WAQI, Open-Meteo) and are shown with their freshness state.
-          Community reports are user-submitted and labeled unverified until an audit pipeline exists.
+          {lang === 'vi' ? 'AirWeave không tuyên bố các chỉ số ESG đã được xác minh. Giá trị AQI/PM đến từ nhà cung cấp bên thứ ba (WAQI, Open-Meteo) và luôn kèm trạng thái độ mới. Báo cáo cộng đồng do người dùng gửi và được đánh dấu chưa xác minh cho đến khi có quy trình kiểm toán.' : 'AirWeave does not claim verified ESG metrics. AQI/PM values come from third-party providers (WAQI, Open-Meteo) and are shown with their freshness state. Community reports are user-submitted and labeled unverified until an audit pipeline exists.'}
         </p>
       </div>
     </div>

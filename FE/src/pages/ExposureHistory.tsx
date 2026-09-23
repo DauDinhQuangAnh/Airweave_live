@@ -36,31 +36,35 @@ import {
   Loader2,
 } from 'lucide-react';
 import FeatureExperienceLayout from '@/components/feature-experience/FeatureExperienceLayout';
-import { useGeolocation } from '@/hooks/use-geolocation';
 import { useWeeklyReport } from '@/hooks/use-weekly-report';
-
-// Default coordinates (Hanoi center: 21.0285, 105.8542)
-const DEFAULT_LAT = 21.0285;
-const DEFAULT_LNG = 105.8542;
+import { useLiveAirContext } from '@/contexts/live-air-context';
+import { isDemoMode } from '@/lib/demo/demo-mode';
+import { localizeDemoText } from '@/lib/localize-demo';
 
 // Fallback Demo Datasets for 7 Days & 30 Days
-const DEMO_7_DAYS = [
-  { day: 'T2', date: '28/07', avgAqi: 78, peakAqi: 142, pm25: 38, peakPm25: 68, hoursOutdoor: 2.5, isReal: false },
-  { day: 'T3', date: '29/07', avgAqi: 62, peakAqi: 110, pm25: 29, peakPm25: 48, hoursOutdoor: 1.8, isReal: false },
-  { day: 'T4', date: '30/07', avgAqi: 125, peakAqi: 185, pm25: 65, peakPm25: 98, hoursOutdoor: 3.2, isReal: false },
-  { day: 'T5', date: '31/07', avgAqi: 54, peakAqi: 92, pm25: 24, peakPm25: 41, hoursOutdoor: 1.2, isReal: false },
-  { day: 'T6', date: '01/08', avgAqi: 71, peakAqi: 130, pm25: 35, peakPm25: 59, hoursOutdoor: 2.0, isReal: false },
-  { day: 'T7', date: '02/08', avgAqi: 48, peakAqi: 82, pm25: 20, peakPm25: 36, hoursOutdoor: 4.1, isReal: false },
-  { day: 'CN', date: '03/08', avgAqi: 58, peakAqi: 105, pm25: 26, peakPm25: 45, hoursOutdoor: 3.5, isReal: false },
-];
+const demoDayValues = [78, 62, 125, 54, 71, 48, 96];
+const DEMO_7_DAYS = demoDayValues.map((avgAqi, index) => {
+  const date = new Date(Date.now() - (demoDayValues.length - 1 - index) * 86_400_000);
+  const pm25 = [27.4, 22.1, 45.8, 15.8, 23.7, 11.4, 34.2][index];
+  return {
+    day: ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'][date.getDay()],
+    date: `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}`,
+    avgAqi,
+    peakAqi: [112, 91, 158, 79, 104, 68, 134][index],
+    pm25,
+    peakPm25: [40.1, 30.8, 59.2, 25.5, 36.2, 18.9, 49][index],
+    hoursOutdoor: [2.5, 1.8, 3.2, 1.2, 2, 4.1, 3.5][index],
+    isReal: false,
+  };
+});
 
 const DEMO_30_DAYS = Array.from({ length: 30 }, (_, i) => {
   const d = new Date();
   d.setDate(d.getDate() - (29 - i));
   const dateStr = `${d.getDate()}/${d.getMonth() + 1}`;
   const dayName = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'][d.getDay()];
-  const avgAqi = Math.floor(45 + Math.random() * 85);
-  const peakAqi = avgAqi + Math.floor(25 + Math.random() * 55);
+  const avgAqi = 45 + ((i * 17 + 23) % 85);
+  const peakAqi = avgAqi + 25 + ((i * 11) % 55);
   const pm25 = Math.round(avgAqi * 0.48);
   const peakPm25 = Math.round(peakAqi * 0.52);
   return {
@@ -70,7 +74,7 @@ const DEMO_30_DAYS = Array.from({ length: 30 }, (_, i) => {
     peakAqi,
     pm25,
     peakPm25,
-    hoursOutdoor: +(1 + Math.random() * 3).toFixed(1),
+    hoursOutdoor: +(1 + ((i * 7) % 30) / 10).toFixed(1),
     isReal: false,
   };
 });
@@ -105,8 +109,8 @@ function MoonIcon(props: React.SVGProps<SVGSVGElement>) {
 const DEMO_ROUTES = [
   {
     id: 1,
-    from: 'Cầu Giấy',
-    to: 'Hoàn Kiếm',
+    from: 'Quận 3',
+    to: 'Quận 1',
     minsAgo: 35,
     mode: 'motorbike',
     pm25: 42,
@@ -116,8 +120,8 @@ const DEMO_ROUTES = [
   },
   {
     id: 2,
-    from: 'Mỹ Đình',
-    to: 'Thái Hà',
+    from: 'Tân Bình',
+    to: 'Quận 3',
     minsAgo: 180,
     mode: 'car',
     pm25: 31,
@@ -127,8 +131,8 @@ const DEMO_ROUTES = [
   },
   {
     id: 3,
-    from: 'Thái Hà',
-    to: 'Nguyễn Trãi',
+    from: 'Quận 1',
+    to: 'Bình Thạnh',
     minsAgo: 320,
     mode: 'bus',
     pm25: 55,
@@ -144,7 +148,7 @@ const DEMO_HOTSPOTS = [
     id: 'h1',
     titleVi: 'Khói đốt rác nông nghiệp',
     titleEn: 'Agricultural waste burning smoke',
-    location: 'Cầu Giấy, Hà Nội',
+    location: 'Bình Thạnh, TP.HCM',
     timeVi: 'Hôm qua, 17:45',
     timeEn: 'Yesterday, 17:45',
     severity: 'high',
@@ -154,7 +158,7 @@ const DEMO_HOTSPOTS = [
     id: 'h2',
     titleVi: 'Bụi mịn từ công trình xây dựng',
     titleEn: 'Construction site particulate matter',
-    location: 'Đống Đa, Hà Nội',
+    location: 'Quận 1, TP.HCM',
     timeVi: '3 ngày trước',
     timeEn: '3 days ago',
     severity: 'medium',
@@ -164,7 +168,7 @@ const DEMO_HOTSPOTS = [
     id: 'h3',
     titleVi: 'Ùn tắc giao thông giờ cao điểm',
     titleEn: 'Peak hour heavy traffic jam',
-    location: 'Ngã Tư Sở, Hà Nội',
+    location: 'Quận 7, TP.HCM',
     timeVi: '4 ngày trước',
     timeEn: '4 days ago',
     severity: 'high',
@@ -220,63 +224,57 @@ const getAqiConfig = (aqi: number, lang: 'vi' | 'en') => {
 const ExposureHistory = () => {
   const { lang } = useOutletContext<{ lang: 'vi' | 'en' }>();
   const navigate = useNavigate();
+  const demo = isDemoMode();
 
-  // Geolocation & Real Historical Air Quality API Integration
-  const { location, requestLocation } = useGeolocation({ autoRequest: true });
-  const lat = location?.lat || DEFAULT_LAT;
-  const lng = location?.lng || DEFAULT_LNG;
-
-  const realWeekly = useWeeklyReport(lat, lng, lang);
+  // Dùng cùng vị trí với toàn ứng dụng; demo không gọi API ngoài.
+  const { location } = useLiveAirContext();
+  const lat = location.lat;
+  const lng = location.lng;
+  const hasKnownLocation = location.status === 'active' || location.status === 'manual';
 
   const [timeframe, setTimeframe] = useState<'7d' | '30d'>('7d');
+  const realWeekly = useWeeklyReport(lat, lng, lang, !demo && hasKnownLocation, timeframe === '7d' ? 7 : 30);
   const [metricView, setMetricView] = useState<'aqi' | 'pm25'>('aqi');
   const [selectedRouteId, setSelectedRouteId] = useState<number | null>(null);
-  const [forceDemo, setForceDemo] = useState(false);
-
-  // Construct dataset using Real Open-Meteo API when available
+  // Synthetic history is available only in the explicitly selected demo mode.
   const dataset = useMemo(() => {
-    if (timeframe === '30d' || forceDemo) {
+    if (demo) {
       return timeframe === '7d' ? DEMO_7_DAYS : DEMO_30_DAYS;
     }
 
     if (!realWeekly.loading && realWeekly.days.length > 0) {
-      return realWeekly.days.map((d, index) => {
-        const dateObj = new Date();
-        dateObj.setDate(dateObj.getDate() - (6 - index));
-        const dateStr = `${dateObj.getDate()}/${dateObj.getMonth() + 1}`;
-        const pm25Val = Math.round(d.aqi * 0.48);
-        const peakAqiVal = Math.round(d.aqi * 1.35);
-        const peakPm25Val = Math.round(pm25Val * 1.35);
-
+      return realWeekly.days.map((d) => {
         return {
           day: d.day,
-          date: dateStr,
+          date: d.date,
           avgAqi: d.aqi,
-          peakAqi: peakAqiVal,
-          pm25: pm25Val,
-          peakPm25: peakPm25Val,
-          hoursOutdoor: +(1.5 + (index % 3) * 0.8).toFixed(1),
+          peakAqi: d.peakAqi,
+          pm25: d.avgPm25,
+          peakPm25: d.peakPm25,
+          hoursOutdoor: 0,
           isReal: true,
         };
       });
     }
 
-    return DEMO_7_DAYS;
-  }, [timeframe, forceDemo, realWeekly]);
+    return [];
+  }, [demo, timeframe, realWeekly]);
 
   // Aggregate Metrics
   const metrics = useMemo(() => {
     const totalAqi = dataset.reduce((acc, curr) => acc + curr.avgAqi, 0);
-    const avgAqi = Math.round(totalAqi / dataset.length);
-    const maxPeakAqi = Math.max(...dataset.map((d) => d.peakAqi));
+    const avgAqi = dataset.length ? Math.round(totalAqi / dataset.length) : null;
+    const maxPeakAqi = dataset.length ? Math.max(...dataset.map((d) => d.peakAqi)) : null;
+    const avgPm25 = dataset.length ? dataset.reduce((acc, curr) => acc + curr.pm25, 0) / dataset.length : null;
     const peakDay = dataset.find((d) => d.peakAqi === maxPeakAqi);
     const totalOutdoorHours = dataset.reduce((acc, curr) => acc + curr.hoursOutdoor, 0).toFixed(1);
 
     const cleanDaysCount = dataset.filter((d) => d.avgAqi <= 60).length;
-    const cleanAirScore = Math.round((cleanDaysCount / dataset.length) * 100);
+    const cleanAirScore = dataset.length ? Math.round((cleanDaysCount / dataset.length) * 100) : null;
 
     return {
       avgAqi,
+      avgPm25,
       maxPeakAqi,
       peakDay,
       totalOutdoorHours,
@@ -284,8 +282,8 @@ const ExposureHistory = () => {
     };
   }, [dataset]);
 
-  const avgConfig = getAqiConfig(metrics.avgAqi, lang);
-  const isRealDataActive = !forceDemo && timeframe === '7d' && !realWeekly.loading && realWeekly.days.length > 0;
+  const avgConfig = metrics.avgAqi !== null ? getAqiConfig(metrics.avgAqi, lang) : null;
+  const isRealDataActive = !demo && !realWeekly.loading && realWeekly.days.length > 0;
 
   return (
     <FeatureExperienceLayout
@@ -293,15 +291,17 @@ const ExposureHistory = () => {
       badge={lang === 'vi' ? 'Giải pháp thông minh' : 'Smart Solution'}
       heading={lang === 'vi' ? 'Hiểu rõ phơi nhiễm AQI cá nhân' : 'Understand your personal AQI exposure'}
       subheading={
-        lang === 'vi'
-          ? 'AirWeave kết nối trực tiếp dữ liệu quan trắc Open-Meteo API theo vị trí thực tế của bạn — giúp bạn theo dõi lịch sử phơi nhiễm AQI chính xác.'
-          : 'AirWeave integrates Open-Meteo historical API for your real GPS coordinates — tracking your true AQI exposure over time.'
+        demo
+          ? (lang === 'vi' ? 'Bộ dữ liệu mô phỏng nhất quán theo vị trí demo TP.HCM.' : 'A consistent simulated dataset for the Ho Chi Minh City demo location.')
+          : !hasKnownLocation
+          ? (lang === 'vi' ? 'Cấp quyền vị trí hoặc chọn vị trí thủ công để xem lịch sử không khí.' : 'Enable location or select one manually to view air-quality history.')
+          : (lang === 'vi' ? 'Lịch sử chất lượng không khí Open-Meteo theo vị trí hiện tại; không phải nhật ký phơi nhiễm cá nhân nếu chưa có dữ liệu hành trình.' : 'Open-Meteo air-quality history for your current location; this is not a personal exposure log without journey data.')
       }
       benefits={[
         {
           icon: <TrendingUp className="w-4 h-4 text-emerald-500" />,
           title: lang === 'vi' ? 'Dữ liệu vệ tinh & trạm quan trắc' : 'Live satellite & station data',
-          text: lang === 'vi' ? 'Truy vấn lịch sử ô nhiễm 7 ngày từ Open-Meteo API.' : 'Fetches real 7-day pollution history from Open-Meteo API.',
+          text: demo ? (lang === 'vi' ? 'Dữ liệu mẫu 7 ngày tại TP.HCM.' : 'Seven-day sample for Ho Chi Minh City.') : (lang === 'vi' ? 'Truy vấn lịch sử ô nhiễm 7 ngày từ Open-Meteo API.' : 'Fetches 7-day pollution history from Open-Meteo API.'),
         },
         {
           icon: <Activity className="w-4 h-4 text-primary" />,
@@ -315,8 +315,8 @@ const ExposureHistory = () => {
         },
       ]}
       chips={[
-        lang === 'vi' ? 'Dữ liệu vệ tinh Open-Meteo' : 'Open-Meteo Live API',
-        lang === 'vi' ? 'Tọa độ GPS thực tế' : 'Real GPS Location',
+        demo ? (lang === 'vi' ? 'Dữ liệu mô phỏng' : 'Simulated data') : (lang === 'vi' ? 'Dữ liệu Open-Meteo' : 'Open-Meteo API'),
+        demo ? 'TP.HCM Demo' : (lang === 'vi' ? 'Vị trí hiện tại' : 'Current location'),
         lang === 'vi' ? 'Lộ trình di chuyển' : 'Route Tracking',
         lang === 'vi' ? 'Gợi ý AI' : 'AI Insights',
       ]}
@@ -338,36 +338,25 @@ const ExposureHistory = () => {
                 {isRealDataActive ? (
                   <span className="flex items-center gap-1 text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 font-heading font-bold uppercase tracking-wider">
                     <Radio className="w-3 h-3 animate-pulse text-emerald-500" />
-                    {lang === 'vi' ? 'Open-Meteo API Thật' : 'Live Open-Meteo API'}
+                    {lang === 'vi' ? 'Lịch sử Open-Meteo' : 'Open-Meteo history'}
                   </span>
                 ) : (
-                  <button
-                    onClick={() => setForceDemo(false)}
-                    className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 font-heading font-bold uppercase tracking-wider hover:bg-amber-500/25 transition-all"
-                  >
-                    {lang === 'vi' ? 'Demo Mode (Nhấn để bật Live API)' : 'Demo Mode (Click for Live API)'}
-                  </button>
+                  <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 font-heading font-bold uppercase tracking-wider">
+                    {demo
+                      ? (lang === 'vi' ? 'Dữ liệu mô phỏng' : 'Simulated data')
+                      : (realWeekly.loading ? (lang === 'vi' ? 'Đang tải dữ liệu' : 'Loading data') : (lang === 'vi' ? 'Chưa có dữ liệu' : 'No data available'))}
+                  </span>
                 )}
               </div>
               <p className="text-xs md:text-sm text-muted-foreground font-body">
-                {lang === 'vi'
+                {hasKnownLocation || demo ? (lang === 'vi'
                   ? `Dữ liệu lịch sử cho khu vực tọa độ (${lat.toFixed(2)}°, ${lng.toFixed(2)}°)${location?.label ? ` - ${location.label}` : ''}`
-                  : `Historical pollution log for location (${lat.toFixed(2)}°, ${lng.toFixed(2)}°)`}
+                  : `Historical pollution log for location (${lat.toFixed(2)}°, ${lng.toFixed(2)}°)`) : (lang === 'vi' ? 'Chưa có vị trí được xác nhận' : 'No confirmed location')}
               </p>
             </div>
 
             {/* Controls */}
             <div className="flex items-center gap-2 self-start sm:self-center">
-              {!location?.lat && (
-                <button
-                  onClick={() => requestLocation()}
-                  className="px-2.5 py-1.5 rounded-xl border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 font-heading text-xs font-semibold flex items-center gap-1 transition-all"
-                >
-                  <Navigation className="w-3.5 h-3.5" />
-                  {lang === 'vi' ? 'Lấy GPS' : 'Get GPS'}
-                </button>
-              )}
-
               <div className="flex items-center gap-1.5 bg-muted/60 p-1 rounded-xl border border-border/50">
                 <button
                   onClick={() => setTimeframe('7d')}
@@ -408,23 +397,23 @@ const ExposureHistory = () => {
                 <span className="text-xs text-muted-foreground font-heading font-medium">
                   {lang === 'vi' ? 'AQI Trung Bình' : 'Average AQI'}
                 </span>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${avgConfig.bgColor} ${avgConfig.textColor}`}>
+                {avgConfig && <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${avgConfig.bgColor} ${avgConfig.textColor}`}>
                   {avgConfig.label}
-                </span>
+                </span>}
               </div>
               <div className="flex items-baseline gap-2">
                 <span className="text-3xl md:text-4xl font-heading font-extrabold text-foreground">
-                  {realWeekly.loading && timeframe === '7d' && !forceDemo ? (
+                  {realWeekly.loading && !demo ? (
                     <Loader2 className="w-7 h-7 animate-spin text-primary inline-block" />
                   ) : (
-                    metrics.avgAqi
+                    metrics.avgAqi ?? '—'
                   )}
                 </span>
                 <span className="text-xs text-muted-foreground font-body">AQI</span>
               </div>
               <p className="text-[11px] text-muted-foreground mt-2 flex items-center gap-1">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-                {lang === 'vi' ? `Tương đương ~${Math.round(metrics.avgAqi * 0.48)} µg/m³ PM2.5` : `Eq. ~${Math.round(metrics.avgAqi * 0.48)} µg/m³ PM2.5`}
+                {metrics.avgPm25 === null ? (lang === 'vi' ? 'Chưa có dữ liệu PM2.5' : 'PM2.5 data unavailable') : (lang === 'vi' ? `PM2.5 trung bình ${metrics.avgPm25.toFixed(1)} µg/m³` : `Average PM2.5 ${metrics.avgPm25.toFixed(1)} µg/m³`)}
               </p>
             </motion.div>
 
@@ -443,14 +432,14 @@ const ExposureHistory = () => {
               </div>
               <div className="flex items-baseline gap-2">
                 <span className="text-3xl md:text-4xl font-heading font-extrabold text-orange-600 dark:text-orange-400">
-                  {metrics.maxPeakAqi}
+                  {metrics.maxPeakAqi ?? '—'}
                 </span>
                 <span className="text-xs text-muted-foreground font-body">AQI</span>
               </div>
               <p className="text-[11px] text-muted-foreground mt-2 truncate">
-                {lang === 'vi'
+                {metrics.peakDay ? (lang === 'vi'
                   ? `Ngày đỉnh: ${metrics.peakDay?.date || ''} (${metrics.peakDay?.day})`
-                  : `Peak on: ${metrics.peakDay?.date || ''}`}
+                  : `Peak on: ${metrics.peakDay?.date || ''}`) : (lang === 'vi' ? 'Chưa có dữ liệu' : 'No data available')}
               </p>
             </motion.div>
 
@@ -469,13 +458,13 @@ const ExposureHistory = () => {
               </div>
               <div className="flex items-baseline gap-2">
                 <span className="text-3xl md:text-4xl font-heading font-extrabold text-foreground">
-                  {metrics.totalOutdoorHours}
+                  {demo ? metrics.totalOutdoorHours : '—'}
                 </span>
                 <span className="text-xs text-muted-foreground font-body">{lang === 'vi' ? 'giờ' : 'hrs'}</span>
               </div>
               <p className="text-[11px] text-muted-foreground mt-2 flex items-center gap-1">
                 <Zap className="w-3.5 h-3.5 text-amber-500" />
-                {lang === 'vi' ? 'Ước tính từ nhật ký' : 'Est. from logs'}
+                {demo ? (lang === 'vi' ? 'Dữ liệu hành trình mô phỏng' : 'Simulated journey log') : (lang === 'vi' ? 'Chưa có nhật ký hành trình' : 'No journey log available')}
               </p>
             </motion.div>
 
@@ -494,13 +483,13 @@ const ExposureHistory = () => {
               </div>
               <div className="flex items-baseline gap-2">
                 <span className="text-3xl md:text-4xl font-heading font-extrabold text-emerald-600 dark:text-emerald-400">
-                  {metrics.cleanAirScore}%
+                  {metrics.cleanAirScore === null ? '—' : `${metrics.cleanAirScore}%`}
                 </span>
               </div>
               <div className="w-full bg-muted rounded-full h-1.5 mt-2 overflow-hidden">
                 <div
                   className="bg-emerald-500 h-full rounded-full transition-all duration-500"
-                  style={{ width: `${metrics.cleanAirScore}%` }}
+                  style={{ width: `${metrics.cleanAirScore ?? 0}%` }}
                 />
               </div>
             </motion.div>
@@ -524,9 +513,9 @@ const ExposureHistory = () => {
                     ? lang === 'vi'
                       ? 'Dữ liệu thực tế được tính toán từ Open-Meteo Air Quality API'
                       : 'Live data calculated from Open-Meteo Air Quality API'
-                    : lang === 'vi'
-                    ? 'So sánh mức AQI trung bình và mức đỉnh phơi nhiễm theo ngày'
-                    : 'Compare daily average AQI vs peak exposure points'}
+                    : demo
+                    ? (lang === 'vi' ? 'Biểu đồ dữ liệu mô phỏng, không phải số đo cá nhân' : 'Simulated chart, not personal measurements')
+                    : (realWeekly.error ?? (lang === 'vi' ? 'Đang tải lịch sử chất lượng không khí' : 'Loading air-quality history'))}
                 </p>
               </div>
 
@@ -654,6 +643,8 @@ const ExposureHistory = () => {
             </div>
           </motion.div>
 
+          {demo && <>
+          {/* Demo-only journey simulation: no real mobility log exists yet. */}
           {/* Time of Day Exposure Matrix */}
           <motion.div
             initial={{ opacity: 0, y: 16 }}
@@ -742,7 +733,7 @@ const ExposureHistory = () => {
                             {r.mode === 'car' && <Car className="w-3.5 h-3.5 text-blue-500" />}
                             {r.mode === 'bus' && <Bus className="w-3.5 h-3.5 text-emerald-500" />}
                             <span className="truncate max-w-[140px] sm:max-w-[180px]">
-                              {r.from} → {r.to}
+                              {localizeDemoText(r.from, lang)} → {localizeDemoText(r.to, lang)}
                             </span>
                           </div>
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${cfg.bgColor} ${cfg.textColor}`}>
@@ -831,7 +822,7 @@ const ExposureHistory = () => {
                         </span>
                       </div>
                       <p className="text-[11px] text-muted-foreground flex items-center justify-between">
-                        <span>{hs.location}</span>
+                        <span>{localizeDemoText(hs.location, lang)}</span>
                         <span>{lang === 'vi' ? hs.timeVi : hs.timeEn}</span>
                       </p>
                     </div>
@@ -880,8 +871,8 @@ const ExposureHistory = () => {
                 </p>
                 <p className="text-muted-foreground">
                   {lang === 'vi'
-                    ? 'Đeo khẩu trang đạt chuẩn N95/FFP2 khi di chuyển các tuyến đường qua Cầu Giấy và Đống Đa.'
-                    : 'Wear an N95/FFP2 certified mask when commuting through Cau Giay and Dong Da areas.'}
+                    ? 'Đeo khẩu trang đạt chuẩn N95/FFP2 khi di chuyển qua Bình Thạnh và Quận 7 trong giờ cao điểm.'
+                    : 'Wear an N95/FFP2 certified mask when commuting through Binh Thanh and District 7 at peak hours.'}
                 </p>
               </div>
 
@@ -904,6 +895,7 @@ const ExposureHistory = () => {
                 : 'Estimated aggregated data for environmental exposure awareness only. AirWeave does not replace professional medical diagnosis.'}
             </p>
           </motion.div>
+          </>}
         </div>
       </div>
     </FeatureExperienceLayout>

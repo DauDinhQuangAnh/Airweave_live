@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowRight, MapPin, Loader2, LocateFixed, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useGeolocation } from '@/hooks/use-geolocation';
-import { useWeatherData } from '@/hooks/use-weather-data';
+import { hasWeatherMetric, useWeatherData } from '@/hooks/use-weather-data';
+import { getAQIStatus, hasAirQualityReading } from '@/lib/air-quality';
+import { useAppLang } from '@/hooks/use-app-lang';
 
 function getAQIColor(aqi: number) {
   if (aqi <= 50) return '#22c55e';
@@ -14,22 +16,15 @@ function getAQIColor(aqi: number) {
   return '#7c1f1f';
 }
 
-function getAQIStatus(aqi: number) {
-  if (aqi <= 50) return '✅ Tốt';
-  if (aqi <= 100) return '🟡 Trung bình';
-  if (aqi <= 150) return '⚠️ Không tốt cho nhóm nhạy cảm';
-  if (aqi <= 200) return '🔴 Không lành mạnh';
-  if (aqi <= 300) return '🟣 Rất xấu';
-  return '☠️ Nguy hiểm';
-}
-
 const HeroSection = () => {
   const navigate = useNavigate();
+  const lang = useAppLang();
   const { location: geo, requestLocation } = useGeolocation({
     autoRequest: true,
     requirePriorConsentForAutoRequest: false,
   });
-  const { weather, hourlyForecast } = useWeatherData(geo, 'vi');
+  const { weather, hourlyForecast } = useWeatherData(geo, lang);
+  const hasReading = hasAirQualityReading(weather);
 
   const [aqi, setAqi] = useState(0);
   const [shouldRenderVideo, setShouldRenderVideo] = useState(false);
@@ -71,7 +66,7 @@ const HeroSection = () => {
 
   // Count-up animation when real AQI arrives
   useEffect(() => {
-    if (weather.loading || weather.aqi === 0) return;
+    if (!hasAirQualityReading(weather)) return;
     const target = weather.aqi;
     if (animatedRef.current) {
       // Smooth transition for subsequent updates
@@ -93,17 +88,17 @@ const HeroSection = () => {
   }, [weather.aqi, weather.loading]);
 
   const metrics = [
-    { label: 'PM2.5', value: weather.pm25 ? weather.pm25.toFixed(1) : '--', unit: 'µg/m³', color: '#f59e0b' },
-    { label: 'PM10', value: weather.pm10 ? weather.pm10.toFixed(1) : '--', unit: 'µg/m³', color: '#0ea5e9' },
-    { label: 'Nhiệt độ', value: weather.temperature ? `${weather.temperature}` : '--', unit: '°C', color: '#22c55e' },
-    { label: 'Độ ẩm', value: weather.humidity ? `${weather.humidity}` : '--', unit: '%', color: '#0ea5e9' },
-    { label: 'Gió', value: weather.windSpeed ? `${weather.windSpeed}` : '--', unit: `km/h`, color: '#7c3aed' },
-    { label: 'Hướng', value: weather.windDirection || '--', unit: '', color: '#00d4aa' },
+    { label: 'PM2.5', value: hasWeatherMetric(weather, 'pm25') ? weather.pm25.toFixed(1) : '--', unit: 'µg/m³', color: '#f59e0b' },
+    { label: 'PM10', value: hasWeatherMetric(weather, 'pm10') ? weather.pm10.toFixed(1) : '--', unit: 'µg/m³', color: '#0ea5e9' },
+    { label: lang === 'vi' ? 'Nhiệt độ' : 'Temperature', value: hasWeatherMetric(weather, 'temperature') ? `${weather.temperature}` : '--', unit: '°C', color: '#22c55e' },
+    { label: lang === 'vi' ? 'Độ ẩm' : 'Humidity', value: hasWeatherMetric(weather, 'humidity') ? `${weather.humidity}` : '--', unit: '%', color: '#0ea5e9' },
+    { label: lang === 'vi' ? 'Gió' : 'Wind', value: hasWeatherMetric(weather, 'windSpeed') ? `${weather.windSpeed}` : '--', unit: `km/h`, color: '#7c3aed' },
+    { label: lang === 'vi' ? 'Hướng' : 'Direction', value: hasWeatherMetric(weather, 'windDirection') ? weather.windDirection : '--', unit: '', color: '#00d4aa' },
   ];
 
   const now = weather.updatedAt
-    ? new Date(weather.updatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
-    : new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+    ? new Date(weather.updatedAt).toLocaleTimeString(lang === 'vi' ? 'vi-VN' : 'en-US', { hour: '2-digit', minute: '2-digit' })
+    : '--:--';
   const pct = Math.min(aqi / 300, 1) * 100;
   const isDenied = geo.permissionState === 'denied';
   const isUnsupported = geo.permissionState === 'unsupported';
@@ -111,17 +106,17 @@ const HeroSection = () => {
   const isIdle = geo.status === 'idle';
   const hasGeoError = !geo.loading && !isIdle && (isDenied || isUnsupported || isIframeBlocked || geo.status === 'unavailable');
   const locationLabel = geo.loading
-    ? 'Đang xác định vị trí...'
+    ? (lang === 'vi' ? 'Đang xác định vị trí...' : 'Locating...')
     : isIdle
-      ? 'Đang chờ quyền vị trí của bạn'
+      ? (lang === 'vi' ? 'Đang chờ quyền vị trí của bạn' : 'Waiting for location permission')
       : isIframeBlocked
-        ? 'GPS bị chặn trong Preview — mở Published URL'
+        ? (lang === 'vi' ? 'GPS bị chặn trong bản xem trước' : 'GPS blocked in preview')
         : isDenied
-          ? 'Bạn đã chặn quyền vị trí'
+          ? (lang === 'vi' ? 'Bạn đã chặn quyền vị trí' : 'Location permission denied')
           : isUnsupported
-            ? 'Trình duyệt không hỗ trợ GPS'
+            ? (lang === 'vi' ? 'Trình duyệt không hỗ trợ GPS' : 'Browser does not support GPS')
             : hasGeoError
-              ? 'Không lấy được vị trí hiện tại'
+              ? (lang === 'vi' ? 'Không lấy được vị trí hiện tại' : 'Current location unavailable')
               : geo.label;
   const isLoadingData = weather.loading || geo.loading;
 
@@ -174,29 +169,29 @@ const HeroSection = () => {
         {/* Badge */}
         <div className="inline-flex items-center gap-2 px-3 md:px-4 py-1.5 rounded-full border border-[#5EEAD4]/40 bg-[#020617]/40 backdrop-blur-md mb-6 md:mb-8 shadow-[0_0_20px_rgba(94,234,212,0.15)] animate-fade-in">
           <span className="w-2 h-2 rounded-full bg-[#5EEAD4] animate-pulse shadow-[0_0_8px_rgba(94,234,212,0.8)]" />
-          <span className="text-[11px] md:text-sm font-body font-semibold text-[#CBD5E1]">Nền tảng không khí #1 Việt Nam</span>
+          <span className="text-[11px] md:text-sm font-body font-semibold text-[#CBD5E1]">{lang === 'vi' ? 'Theo dõi chất lượng không khí theo vị trí' : 'Location-based air quality'}</span>
         </div>
 
         {/* H1 */}
         <h1 className="font-heading text-[clamp(32px,8vw,88px)] font-extrabold leading-[1.05] tracking-[-1px] md:tracking-[-2px] mb-4 md:mb-6 [text-shadow:0_2px_20px_rgba(2,6,23,0.7),0_1px_3px_rgba(2,6,23,0.5)] animate-fade-in">
-          <span className="text-[#F5F7FA]">Hít thở thông minh hơn.</span>
+          <span className="text-[#F5F7FA]">{lang === 'vi' ? 'Hít thở thông minh hơn.' : 'Breathe with better information.'}</span>
           <br />
-          <span className="bg-gradient-to-r from-[#5EEAD4] via-[#67E8F9] to-[#7DD3FC] bg-clip-text text-transparent">Sống khỏe hơn.</span>
+          <span className="bg-gradient-to-r from-[#5EEAD4] via-[#67E8F9] to-[#7DD3FC] bg-clip-text text-transparent">{lang === 'vi' ? 'Sống khỏe hơn.' : 'Plan your day with confidence.'}</span>
         </h1>
 
         {/* Subtitle */}
         <p className="text-sm md:text-lg font-body font-medium text-[#CBD5E1] max-w-[560px] mx-auto mb-8 md:mb-10 leading-relaxed px-2 [text-shadow:0_1px_8px_rgba(2,6,23,0.6)] animate-fade-in">
-          Trợ lý hô hấp cá nhân giúp bạn theo dõi chất lượng không khí vi vùng, tìm lộ trình sạch và bảo vệ sức khỏe mỗi ngày tại Hà Nội & TP.HCM.
+          {lang === 'vi' ? 'Xem dữ liệu không khí theo vị trí, nguồn dữ liệu và các lộ trình có thể so sánh khi thông tin sẵn có.' : 'See location-based air data, its sources, and routes you can compare when information is available.'}
         </p>
 
         {/* CTAs */}
         <div className="flex flex-col sm:flex-row gap-3 justify-center mb-10 md:mb-16 animate-fade-in">
           <Button size="lg" onClick={() => navigate('/auth')} className="font-heading font-bold gap-2 px-6 md:px-8 bg-gradient-to-r from-[#14B8A6] via-[#06B6D4] to-[#0EA5E9] hover:opacity-90 text-white shadow-[0_0_30px_rgba(94,234,212,0.4)] border-0">
-            Tải ứng dụng miễn phí
+            {lang === 'vi' ? 'Bắt đầu sử dụng' : 'Get started'}
             <ArrowRight className="w-4 h-4" />
           </Button>
           <Button size="lg" variant="outline" onClick={() => navigate('/auth')} className="font-heading font-semibold px-6 md:px-8 border-[#5EEAD4]/40 bg-[#020617]/40 backdrop-blur-md hover:bg-[#5EEAD4]/10 hover:border-[#5EEAD4]/70 text-[#F5F7FA]">
-            Xem demo live →
+            {lang === 'vi' ? 'Đăng nhập hoặc thử demo →' : 'Sign in or try the demo →'}
           </Button>
         </div>
 
@@ -213,23 +208,28 @@ const HeroSection = () => {
                 <MapPin className="w-3.5 h-3.5 shrink-0" />
               )}
               <span className="truncate text-xs md:text-sm">{locationLabel}</span>
-              {geo.isRefining && <span className="text-[10px] text-amber-500 ml-1 shrink-0">GPS refining...</span>}
+              {geo.isRefining && <span className="text-[10px] text-amber-500 ml-1 shrink-0">{lang === 'vi' ? 'Đang tinh chỉnh GPS...' : 'Refining GPS...'}</span>}
               {typeof geo.accuracy === 'number' && !geo.loading && !hasGeoError && (
                 <span className="text-[10px] text-primary/70 ml-1 shrink-0">±{geo.accuracy}m</span>
               )}
             </span>
             <span className="flex items-center gap-2 text-muted-foreground shrink-0">
-              {weather.source === 'waqi' && weather.station && !weather.loading && (
+              {hasReading && weather.source === 'waqi' && weather.station && (
                 <span className="px-1.5 py-0.5 rounded text-[10px] font-heading font-semibold bg-green-500/15 text-green-600 border border-green-500/20">
                   📡 {weather.station}
                 </span>
               )}
-              {weather.source === 'open-meteo' && !weather.loading && (
+              {hasReading && weather.source === 'open-meteo' && (
                 <span className="px-1.5 py-0.5 rounded text-[10px] font-heading font-semibold bg-blue-500/15 text-blue-600 border border-blue-500/20">
                   Open-Meteo
                 </span>
               )}
-              <span className="hidden sm:inline">Cập nhật {now}</span>
+              {hasReading && weather.source === 'demo' && (
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-heading font-semibold bg-amber-500/15 text-amber-600 border border-amber-500/20">
+                  {lang === 'vi' ? 'Dữ liệu mô phỏng' : 'Simulated data'}
+                </span>
+              )}
+              <span className="hidden sm:inline">{lang === 'vi' ? 'Cập nhật' : 'Updated'} {now}</span>
             </span>
           </div>
 
@@ -238,14 +238,14 @@ const HeroSection = () => {
             <div className="mb-4 p-3 rounded-lg bg-primary/5 border border-primary/20 text-xs text-foreground/80 flex items-start gap-2">
               <MapPin className="w-4 h-4 text-primary shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
-                <p className="font-semibold mb-1">Xem AQI tại vị trí của bạn</p>
+                <p className="font-semibold mb-1">{lang === 'vi' ? 'Xem AQI tại vị trí của bạn' : 'See AQI at your location'}</p>
                 <p className="text-muted-foreground leading-relaxed">
-                  Trình duyệt sẽ hỏi quyền vị trí để tải AQI theo nơi bạn đang đứng. Nếu chưa thấy hộp thoại, bấm lại nút bên cạnh.
+                  {lang === 'vi' ? 'Trình duyệt sẽ hỏi quyền vị trí để tải AQI. Nếu chưa thấy hộp thoại, bấm lại nút bên cạnh.' : 'Your browser will request location permission to load AQI. If no prompt appears, try the button again.'}
                 </p>
               </div>
               <Button size="sm" onClick={requestLocation} className="gap-1.5 shrink-0">
                 <LocateFixed className="w-3.5 h-3.5" />
-                Dùng vị trí của tôi
+                {lang === 'vi' ? 'Dùng vị trí của tôi' : 'Use my location'}
               </Button>
             </div>
           )}
@@ -255,21 +255,21 @@ const HeroSection = () => {
             <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs text-foreground/80 flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
-                <p className="font-semibold mb-1">Không thể lấy vị trí hiện tại</p>
+                <p className="font-semibold mb-1">{lang === 'vi' ? 'Không thể lấy vị trí hiện tại' : 'Current location unavailable'}</p>
                 <p className="text-muted-foreground leading-relaxed">
                   {isIframeBlocked
-                    ? 'GPS có thể bị chặn trong Preview. Hãy mở trang Published URL trực tiếp để kiểm tra.'
+                    ? (lang === 'vi' ? 'GPS có thể bị chặn trong bản xem trước. Hãy mở ứng dụng trực tiếp.' : 'GPS may be blocked in preview. Open the app directly.')
                     : isDenied
-                      ? 'Vui lòng cấp quyền GPS hoặc nhập vị trí thủ công. Trên trình duyệt: nhấn 🔒 trên thanh địa chỉ → Cho phép Vị trí, rồi bấm "Thử lại".'
+                      ? (lang === 'vi' ? 'Vui lòng cấp quyền GPS hoặc nhập vị trí thủ công. Sau đó thử lại.' : 'Allow GPS access or enter a location manually, then retry.')
                       : isUnsupported
-                        ? 'Trình duyệt của bạn không hỗ trợ định vị GPS. Vui lòng nhập vị trí thủ công.'
-                        : 'GPS không phản hồi (POSITION_UNAVAILABLE/TIMEOUT). Hãy ra nơi thoáng và bấm "Thử lại".'}
+                        ? (lang === 'vi' ? 'Trình duyệt không hỗ trợ GPS. Vui lòng nhập vị trí thủ công.' : 'Your browser does not support GPS. Enter a location manually.')
+                        : (lang === 'vi' ? 'GPS không phản hồi. Hãy ra nơi thoáng và thử lại.' : 'GPS did not respond. Try again from an open area.')}
                 </p>
               </div>
               {!isUnsupported && !isIframeBlocked && (
                 <Button size="sm" variant="outline" onClick={requestLocation} className="gap-1.5 shrink-0">
                   <LocateFixed className="w-3.5 h-3.5" />
-                  Thử lại
+                  {lang === 'vi' ? 'Thử lại' : 'Retry'}
                 </Button>
               )}
             </div>
@@ -283,8 +283,10 @@ const HeroSection = () => {
               {isLoadingData ? (
                 <div className="flex flex-col items-center py-6">
                   <Loader2 className="w-12 h-12 animate-spin text-primary mb-2" />
-                  <span className="text-xs text-muted-foreground font-body">Đang tải dữ liệu thực...</span>
+                  <span className="text-xs text-muted-foreground font-body">{lang === 'vi' ? 'Đang tải dữ liệu không khí...' : 'Loading air data...'}</span>
                 </div>
+              ) : !hasReading ? (
+                <div className="text-center text-sm text-muted-foreground py-6">{lang === 'vi' ? 'Chưa có số đo AQI hợp lệ cho vị trí này.' : 'No valid AQI reading is available for this location.'}</div>
               ) : (
                 <>
                   {/* AQI number + danger pulse glow when > 150 (lighter on mobile) */}
@@ -316,10 +318,10 @@ const HeroSection = () => {
                     </span>
                   </div>
                   <span className="text-xs text-muted-foreground font-body mt-1 mb-3">
-                    {aqi > 150 ? '⚠️ AQI Nguy hiểm' : 'Chỉ số AQI thực tế'}
+                    {lang === 'vi' ? 'Chỉ số AQI hiện có' : 'Available AQI reading'}
                   </span>
                   <span className="px-3 py-1 rounded-full text-xs font-body font-medium" style={{ backgroundColor: `${getAQIColor(aqi)}20`, color: getAQIColor(aqi) }}>
-                    {getAQIStatus(aqi)}
+                    {getAQIStatus(aqi, lang)}
                   </span>
                   <div className="w-full mt-4 h-2 rounded-full overflow-hidden" style={{ background: 'linear-gradient(to right, #22c55e, #eab308, #f97316, #ef4444, #7c3aed)' }}>
                     <div className="relative h-full" style={{ width: `${pct}%` }}>
@@ -331,7 +333,7 @@ const HeroSection = () => {
                   {hourlyForecast.length > 0 && (
                     <div className="w-full mt-4 pt-3 border-t border-border/50">
                       <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-[10px] font-body text-muted-foreground uppercase tracking-wider">Xu hướng 24h</span>
+                        <span className="text-[10px] font-body text-muted-foreground uppercase tracking-wider">{lang === 'vi' ? 'Dự báo 24h' : '24h forecast'}</span>
                         <span className="text-[10px] font-body text-muted-foreground">
                           AQI {Math.min(...hourlyForecast.map(h => h.aqi))}–{Math.max(...hourlyForecast.map(h => h.aqi))}
                         </span>

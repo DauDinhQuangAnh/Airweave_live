@@ -22,7 +22,7 @@
   "preferences": {
     "id": "demo-pref-0001",
     "user_id": "demo-user-0001",
-    "health_tier": ["asthma"],
+    "health_tier": ["respiratory"],
     "active_hours": ["morning", "evening"],
     "commute_type": ["motorbike"],
     "medical_history": ["respiratory"],

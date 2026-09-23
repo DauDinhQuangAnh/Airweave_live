@@ -29,6 +29,14 @@ function shortDistrict(name: string | null): string {
   return parts[0].length <= 28 ? parts[0] : parts[0].slice(0, 26) + '…';
 }
 
+export function hasFreshStationReading(station: WaqiBoundsStation): boolean {
+  const observedAt = typeof station.time === 'string' ? Date.parse(station.time) : NaN;
+  const ageMs = Date.now() - observedAt;
+  return Number.isFinite(station.aqi) && station.aqi >= 0 &&
+    Number.isFinite(station.lat) && Number.isFinite(station.lng) &&
+    Number.isFinite(observedAt) && ageMs >= -5 * 60_000 && ageMs <= 2 * 60 * 60_000;
+}
+
 export function useWaqiStations() {
   const [stations, setStations] = useState<PAMStation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,15 +50,15 @@ export function useWaqiStations() {
     if (!silent || stations.length === 0) setLoading(true);
     setError(null);
     try {
-      const results = await Promise.all(
+      const results = await Promise.allSettled(
         BOUNDS.map(async (b) => {
           const data = await airApi.waqiBounds(b.lat1, b.lng1, b.lat2, b.lng2);
           const list = (data?.stations || []) as WaqiBoundsStation[];
-          return list.map((s): PAMStation => {
+          return list.filter(hasFreshStationReading).map((s): PAMStation => {
             const id = `WAQI-${s.uid}`;
             const prev = prevAqiRef.current.get(id);
             const trend: PAMStation['trend'] =
-              prev === undefined ? 'stable' :
+              prev === undefined ? undefined :
               s.aqi - prev > 3 ? 'up' :
               s.aqi - prev < -3 ? 'down' : 'stable';
             return {
@@ -68,7 +76,9 @@ export function useWaqiStations() {
           });
         })
       );
-      const merged = results.flat()
+      const fulfilled = results.filter((result): result is PromiseFulfilledResult<PAMStation[]> => result.status === 'fulfilled');
+      if (fulfilled.length === 0) throw new Error('WAQI bounds unavailable');
+      const merged = fulfilled.flatMap((result) => result.value)
         // De-duplicate (a station could fall on the edge of both boxes)
         .filter((s, i, arr) => arr.findIndex(o => o.id === s.id) === i)
         .sort((a, b) => b.aqi - a.aqi);

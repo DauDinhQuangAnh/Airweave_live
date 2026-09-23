@@ -155,16 +155,67 @@ export function useWindyMap(containerRef: React.RefObject<HTMLDivElement>, optio
             uiObserverRef.current.observe(containerRef.current, {
               childList: true,
               subtree: true,
-              attributes: true,
             });
           }
 
           setMapReady(true);
         });
+
+        // If Windy doesn't initialize within 6s (e.g. invalid key or network block), fallback to Leaflet CartoDB
+        const fallbackTimer = window.setTimeout(() => {
+          if (!cancelled && !windyApiRef.current && !leafletMapRef.current && containerRef.current) {
+            console.warn('Windy initialization timed out, activating standard Leaflet map');
+            fallbackToLeaflet();
+          }
+        }, 6000);
+
+        const fallbackToLeaflet = () => {
+          if (cancelled || !containerRef.current || windyApiRef.current || leafletMapRef.current) return;
+          const L = (window as any).L;
+          if (!L) return;
+          try {
+            const map = L.map(containerRef.current, {
+              center: [lat, lng],
+              zoom: 12,
+              zoomControl: false,
+            });
+            if (L.control?.zoom) {
+              L.control.zoom({ position: 'topright' }).addTo(map);
+            }
+            if (L.control?.scale) {
+              L.control.scale({ position: 'bottomright', imperial: false }).addTo(map);
+            }
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+              attribution: '&copy; CARTO &copy; OSM',
+              subdomains: 'abcd',
+              maxZoom: 20,
+            }).addTo(map);
+            leafletMapRef.current = map;
+            setMapReady(true);
+          } catch (e) {
+            console.warn('Fallback Leaflet init error:', e);
+          }
+        };
       } catch (err) {
         console.error('Windy init error:', err);
-        if (!cancelled) {
-          toast.error(lang === 'vi' ? 'Không thể tải bản đồ Windy' : 'Failed to load Windy map');
+        const L = (window as any).L;
+        if (L && containerRef.current && !leafletMapRef.current) {
+          try {
+            const map = L.map(containerRef.current, {
+              center: [lat, lng],
+              zoom: 12,
+              zoomControl: false,
+            });
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+              attribution: '&copy; CARTO &copy; OSM',
+              subdomains: 'abcd',
+              maxZoom: 20,
+            }).addTo(map);
+            leafletMapRef.current = map;
+            setMapReady(true);
+          } catch (e) {
+            console.warn('Fallback Leaflet error:', e);
+          }
         }
       }
     };

@@ -18,7 +18,11 @@ export default function GPSStatusBanner({ lang: propLang }: { lang?: 'vi' | 'en'
   let detail = lang === 'vi' ? 'Truy cập GPS để tìm bệnh viện gần bạn nhất.' : 'Access GPS to locate nearest hospitals.';
   let iconColor = 'text-muted-foreground';
 
-  if (location.permissionState === 'denied') {
+  if (location.status === 'manual') {
+    tone = 'border-sky-500/40 bg-sky-500/10';
+    title = lang === 'vi' ? 'Đang dùng vị trí đã lưu hoặc chọn thủ công' : 'Using a saved or manually selected location';
+    detail = lang === 'vi' ? `${location.label} — đây không phải tọa độ GPS mới.` : `${location.label} — this is not a fresh GPS fix.`;
+  } else if (location.permissionState === 'denied') {
     tone = 'border-red-500/40 bg-red-500/10';
     Icon = AlertCircle;
     iconColor = 'text-red-600';

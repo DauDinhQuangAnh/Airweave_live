@@ -21,6 +21,16 @@ const TONE_STYLES: Record<Tone, { dot: string; chip: string; label: string }> = 
   iframe:      { dot: 'bg-purple-500',             chip: 'bg-purple-500/10 text-purple-600 border-purple-500/30',          label: 'GPS Blocked (Preview)' },
 };
 
+const TONE_LABELS: Record<Tone, { vi: string; en: string }> = {
+  idle: { vi: 'GPS đang tắt', en: 'GPS Off' },
+  requesting: { vi: 'Đang lấy vị trí…', en: 'Requesting…' },
+  active: { vi: 'Định vị đang bật', en: 'Location Active' },
+  denied: { vi: 'Đã từ chối vị trí', en: 'Location Denied' },
+  manual: { vi: 'Vị trí thủ công', en: 'Manual Location' },
+  unavailable: { vi: 'GPS không khả dụng', en: 'GPS Unavailable' },
+  iframe: { vi: 'GPS bị chặn (Preview)', en: 'GPS Blocked (Preview)' },
+};
+
 function statusToTone(status: string): Tone {
   switch (status) {
     case 'requesting': return 'requesting';
@@ -42,6 +52,7 @@ export default function GPSStatusChip({ lang = 'vi' as 'vi' | 'en' }) {
 
   const tone = statusToTone(location.status);
   const style = TONE_STYLES[tone];
+  const toneLabel = TONE_LABELS[tone][lang];
   const Icon = tone === 'requesting' ? Loader2
     : tone === 'denied' || tone === 'unavailable' || tone === 'iframe' ? AlertCircle
     : tone === 'manual' ? Edit3
@@ -96,11 +107,11 @@ export default function GPSStatusChip({ lang = 'vi' as 'vi' | 'en' }) {
           type="button"
           className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-heading font-semibold transition hover:opacity-90 ${style.chip}`}
           title={location.label}
-          aria-label={`GPS status: ${style.label}`}
+          aria-label={`${lang === 'vi' ? 'Trạng thái GPS' : 'GPS status'}: ${toneLabel}`}
         >
           <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
           <Icon className={`w-3 h-3 ${tone === 'requesting' ? 'animate-spin' : ''}`} />
-          <span className="hidden sm:inline">{style.label}</span>
+          <span className="hidden sm:inline">{toneLabel}</span>
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 p-4 space-y-3">

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { getAQIStatus } from '@/lib/air-quality';
 
 export type AQITickerItem = {
   name: string;
@@ -14,6 +15,7 @@ interface AQITickerProps {
   loading?: boolean;
   message?: string;
   animate?: boolean;
+  lang?: 'vi' | 'en';
 }
 
 function getAQIColor(aqi: number) {
@@ -25,16 +27,7 @@ function getAQIColor(aqi: number) {
   return '#7c1f1f';
 }
 
-function getAQIStatus(aqi: number) {
-  if (aqi <= 50) return 'Tot';
-  if (aqi <= 100) return 'Trung binh';
-  if (aqi <= 150) return 'Nhay cam';
-  if (aqi <= 200) return 'Khong lanh manh';
-  if (aqi <= 300) return 'Rat xau';
-  return 'Nguy hiem';
-}
-
-const AQITicker = ({ items, loading = false, message, animate = true }: AQITickerProps) => {
+const AQITicker = ({ items, loading = false, message, animate = true, lang = 'vi' }: AQITickerProps) => {
   const [isVisible, setIsVisible] = useState(true);
   const [isDocumentVisible, setIsDocumentVisible] = useState(() => !document.hidden);
   const tickerRef = useRef<HTMLDivElement>(null);
@@ -65,7 +58,7 @@ const AQITicker = ({ items, loading = false, message, animate = true }: AQITicke
     <div ref={tickerRef} className="w-full overflow-hidden bg-muted/80 border-y border-border py-2.5 relative z-20">
       {items.length === 0 ? (
         <div className="px-4 text-sm font-body text-muted-foreground">
-          {loading ? 'Dang lay AQI theo vi tri hien tai...' : message || 'Chua co du lieu AQI theo vi tri hien tai.'}
+          {loading ? (lang === 'vi' ? 'Đang lấy AQI theo vị trí hiện tại...' : 'Loading AQI for your location...') : message || (lang === 'vi' ? 'Chưa có dữ liệu AQI theo vị trí hiện tại.' : 'No location-based AQI data available.')}
         </div>
       ) : (
         <div
@@ -99,54 +92,57 @@ const AQITicker = ({ items, loading = false, message, animate = true }: AQITicke
 export function buildCurrentAirTickerItems(params: {
   locationLabel: string;
   aqi: number;
-  pm25: number;
-  pm10: number;
-  temperature: number;
-  humidity: number;
-  windSpeed: number;
+  pm25?: number | null;
+  pm10?: number | null;
+  temperature?: number | null;
+  humidity?: number | null;
+  windSpeed?: number | null;
   source?: string | null;
+  lang?: 'vi' | 'en';
 }): AQITickerItem[] {
+  const lang = params.lang ?? 'vi';
   const aqiColor = getAQIColor(params.aqi);
-  return [
+  const items: AQITickerItem[] = [
     {
       name: params.locationLabel,
       label: 'AQI',
       value: params.aqi,
-      status: getAQIStatus(params.aqi),
+      status: getAQIStatus(params.aqi, lang),
       source: params.source,
       color: aqiColor,
     },
-    {
+  ];
+  if (params.pm25 != null) items.push({
       name: 'PM2.5',
-      label: 'Bui min',
-      value: `${params.pm25.toFixed(1)} ug/m3`,
+      label: lang === 'vi' ? 'Bụi mịn' : 'Fine particles',
+      value: `${params.pm25.toFixed(1)} µg/m³`,
       color: '#f59e0b',
-    },
-    {
+    });
+  if (params.pm10 != null) items.push({
       name: 'PM10',
-      label: 'Bui tho',
-      value: `${params.pm10.toFixed(1)} ug/m3`,
+      label: lang === 'vi' ? 'Bụi thô' : 'Coarse particles',
+      value: `${params.pm10.toFixed(1)} µg/m³`,
       color: '#0ea5e9',
-    },
-    {
-      name: 'Nhiet do',
-      label: 'Hien tai',
-      value: `${params.temperature} C`,
+    });
+  if (params.temperature != null) items.push({
+      name: lang === 'vi' ? 'Nhiệt độ' : 'Temperature',
+      label: lang === 'vi' ? 'Hiện tại' : 'Current',
+      value: `${params.temperature}°C`,
       color: '#22c55e',
-    },
-    {
-      name: 'Do am',
-      label: 'Hien tai',
+    });
+  if (params.humidity != null) items.push({
+      name: lang === 'vi' ? 'Độ ẩm' : 'Humidity',
+      label: lang === 'vi' ? 'Hiện tại' : 'Current',
       value: `${params.humidity}%`,
       color: '#06b6d4',
-    },
-    {
-      name: 'Gio',
-      label: 'Toc do',
+    });
+  if (params.windSpeed != null) items.push({
+      name: lang === 'vi' ? 'Gió' : 'Wind',
+      label: lang === 'vi' ? 'Tốc độ' : 'Speed',
       value: `${params.windSpeed} km/h`,
       color: '#7c3aed',
-    },
-  ];
+    });
+  return items;
 }
 
 export default AQITicker;

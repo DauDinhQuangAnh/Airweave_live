@@ -16,9 +16,8 @@ import type { JwtUser } from '../decorators/current-user.decorator';
  *   @UseGuards(JwtAuthGuard, AdminGuard)
  *
  * Cơ chế phân quyền tối giản dựa trên danh sách email trong biến môi trường
- * ADMIN_EMAILS (ngăn cách bằng dấu phẩy). Nếu chưa cấu hình thì cho phép mọi
- * người dùng đã đăng nhập (giữ đúng triết lý graceful degradation, chạy được
- * ngay khi dev) nhưng ghi log cảnh báo để nhắc siết lại trước khi lên production.
+ * ADMIN_EMAILS (ngăn cách bằng dấu phẩy). Từ chối truy cập nếu allowlist
+ * chưa cấu hình; chế độ demo trên frontend không gọi API quản trị thật.
  */
 @Injectable()
 export class AdminGuard implements CanActivate {
@@ -36,11 +35,8 @@ export class AdminGuard implements CanActivate {
       .filter(Boolean);
 
     if (allowlist.length === 0) {
-      this.logger.warn(
-        `ADMIN_EMAILS chưa cấu hình — mọi tài khoản đăng nhập đang được coi là admin. ` +
-          `Hãy đặt ADMIN_EMAILS trước khi lên production.`,
-      );
-      return true;
+      this.logger.error('ADMIN_EMAILS chưa cấu hình — từ chối truy cập quản trị.');
+      throw new ForbiddenException('Chưa cấu hình quyền quản trị');
     }
 
     if (!allowlist.includes(user.email.toLowerCase())) {

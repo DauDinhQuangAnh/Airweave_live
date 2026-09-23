@@ -65,7 +65,7 @@ export default function PrivacyStatusBadges({ lang: propLang, compact = false }:
 
   return (
     <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-900/60 border border-white/10 backdrop-blur-md flex flex-wrap items-center gap-2 text-xs">
-      <span className="font-heading font-bold text-white/50 mr-1 text-[11px] uppercase tracking-wider">Trạng thái Y tế & Quyền riêng tư:</span>
+      <span className="font-heading font-bold text-white/50 mr-1 text-[11px] uppercase tracking-wider">{lang === 'vi' ? 'Trạng thái Y tế & Quyền riêng tư' : 'Health & Privacy Status'}:</span>
       {items.map((it, i) => (
         <span
           key={i}

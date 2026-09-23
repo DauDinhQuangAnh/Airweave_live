@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { aiApi } from '@/integrations/api';
 import { GeoLocation } from '@/hooks/use-geolocation';
-import { WeatherData } from '@/hooks/use-weather-data';
+import { hasWeatherMetric, WeatherData } from '@/hooks/use-weather-data';
+import { hasAirQualityReading } from '@/lib/air-quality';
 
 interface UseAIInsightOptions {
   lang: 'vi' | 'en';
@@ -21,7 +22,7 @@ export function useAIInsight({ lang, location, weather, preferences }: UseAIInsi
   });
 
   const fetchInsight = useCallback(async () => {
-    if (weather.loading || !location.label || weather.aqi === 0) return;
+    if (!hasAirQualityReading(weather) || !location.label) return;
 
     setLoading(true);
     setError(null);
@@ -32,11 +33,11 @@ export function useAIInsight({ lang, location, weather, preferences }: UseAIInsi
         location: { label: location.label },
         weather: {
           aqi: weather.aqi,
-          pm25: weather.pm25,
-          temperature: weather.temperature,
-          humidity: weather.humidity,
-          windSpeed: weather.windSpeed,
-          windDirection: weather.windDirection,
+          ...(hasWeatherMetric(weather, 'pm25') ? { pm25: weather.pm25 } : {}),
+          ...(hasWeatherMetric(weather, 'temperature') ? { temperature: weather.temperature } : {}),
+          ...(hasWeatherMetric(weather, 'humidity') ? { humidity: weather.humidity } : {}),
+          ...(hasWeatherMetric(weather, 'windSpeed') ? { windSpeed: weather.windSpeed } : {}),
+          ...(hasWeatherMetric(weather, 'windDirection') ? { windDirection: weather.windDirection } : {}),
         },
         preferences: preferences
           ? {
@@ -55,8 +56,8 @@ export function useAIInsight({ lang, location, weather, preferences }: UseAIInsi
       // Fallback to template
       setInsight(
         lang === 'vi'
-          ? `Chất lượng không khí tại ${location.label} hiện ở mức ${weather.aqi > 150 ? 'xấu' : weather.aqi > 100 ? 'kém' : weather.aqi > 50 ? 'trung bình' : 'tốt'} với PM2.5 là ${weather.pm25} µg/m³.`
-          : `Air quality at ${location.label} is ${weather.aqi > 150 ? 'unhealthy' : weather.aqi > 100 ? 'poor' : weather.aqi > 50 ? 'moderate' : 'good'} with PM2.5 at ${weather.pm25} µg/m³.`
+          ? `Chất lượng không khí tại ${location.label} hiện ở mức ${weather.aqi > 150 ? 'xấu' : weather.aqi > 100 ? 'kém' : weather.aqi > 50 ? 'trung bình' : 'tốt'} (AQI ${weather.aqi}).${hasWeatherMetric(weather, 'pm25') ? ` PM2.5: ${weather.pm25} µg/m³.` : ''}`
+          : `Air quality at ${location.label} is ${weather.aqi > 150 ? 'unhealthy' : weather.aqi > 100 ? 'poor' : weather.aqi > 50 ? 'moderate' : 'good'} (AQI ${weather.aqi}).${hasWeatherMetric(weather, 'pm25') ? ` PM2.5: ${weather.pm25} µg/m³.` : ''}`
       );
     } finally {
       setLoading(false);

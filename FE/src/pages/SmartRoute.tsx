@@ -1,13 +1,36 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { Route, Clock, Shield, Navigation, Loader2, MapPin, AlertTriangle, Zap, Heart, Play, Car, Bike, PersonStanding, Bus } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Route,
+  Clock,
+  Shield,
+  Navigation,
+  Loader2,
+  MapPin,
+  AlertTriangle,
+  Zap,
+  Heart,
+  Play,
+  Car,
+  Bike,
+  PersonStanding,
+  ArrowUpDown,
+  Sparkles,
+  ShieldCheck,
+  Leaf,
+  Layers,
+  Info,
+  CheckCircle2,
+  ExternalLink,
+  Compass,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import PremiumGate from '@/components/PremiumGate';
 import WindBoomerangLoader from '@/components/WindBoomerangLoader';
-import ThematicWatermark from '@/components/ThematicWatermark';
+import AuroraBackground from '@/components/AuroraBackground';
 import RouteMap, { type RouteSegment, type DangerZone } from '@/components/smart-route/RouteMap';
 import MobilityHandoff from '@/components/smart-route/MobilityHandoff';
 import { useLiveAirContext } from '@/contexts/live-air-context';
@@ -27,11 +50,9 @@ import {
   type Prefs,
 } from '@/lib/route-scoring';
 import { hotspotIntelligenceService, type HotspotEvent } from '@/lib/civic-hotspot';
-import { USE_DEMO_DATA } from '@/lib/app-mode';
-import DataStatusChip, { type DataStatus } from '@/components/feature-experience/DataStatusChip';
+import { shouldUseDemoData } from '@/lib/app-mode';
+import DataStatusChip from '@/components/feature-experience/DataStatusChip';
 import CalculationDetailsPanel from '@/components/feature-experience/CalculationDetailsPanel';
-import FeatureExperienceLayout from '@/components/feature-experience/FeatureExperienceLayout';
-import { Shield as ShieldIcon, Heart as HeartIcon, Wind as WindIcon } from 'lucide-react';
 
 // Read Mapbox from VITE_MAPBOX_TOKEN so secrets are never committed.
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined;
@@ -40,6 +61,16 @@ interface GeocodeSuggestion {
   id: string;
   place_name: string;
   center: [number, number];
+}
+
+function normalizePlaceName(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function isRelevantPlace(query: string, placeName: string): boolean {
+  const words = normalizePlaceName(query).split(' ').filter(Boolean);
+  const name = normalizePlaceName(placeName);
+  return words.length > 0 && (name.includes(words.join(' ')) || words.filter((word) => name.split(' ').includes(word)).length >= Math.ceil(words.length * 0.75));
 }
 
 interface ScoredRoute {
@@ -68,14 +99,32 @@ interface ResultBundle {
 type VehicleKey = keyof typeof VEHICLES;
 
 /* -------- mapbox helpers -------- */
-async function geocodeSearch(query: string): Promise<GeocodeSuggestion[]> {
+async function geocodeSearch(query: string, proximity?: [number, number]): Promise<GeocodeSuggestion[]> {
   if (!query || query.length < 3) return [];
   if (!MAPBOX_TOKEN) return [];
+  const searchParams = new URLSearchParams({ q: query, access_token: MAPBOX_TOKEN, country: 'VN', limit: '8', language: 'vi' });
+  if (proximity) searchParams.set('proximity', proximity.join(','));
+  try {
+    // Search Box includes POIs (parks, hospitals); Geocoding v5 often returns only nearby addresses.
+    const response = await fetch(`https://api.mapbox.com/search/searchbox/v1/forward?${searchParams}`);
+    if (response.ok) {
+      const data = await response.json();
+      const places = (data.features || []).map((feature: any) => ({
+        id: feature.properties?.mapbox_id,
+        place_name: [feature.properties?.name, feature.properties?.place_formatted].filter(Boolean).join(', '),
+        center: feature.geometry?.coordinates,
+      })).filter((place: GeocodeSuggestion) =>
+        place.id && Array.isArray(place.center) && place.center.length === 2 && isRelevantPlace(query, place.place_name));
+      if (places.length) return places;
+    }
+  } catch {
+    // Older tokens may only have access to the Geocoding API.
+  }
   const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${MAPBOX_TOKEN}&country=vn&limit=5&language=vi`;
   const res = await fetch(url);
   if (!res.ok) return [];
   const data = await res.json();
-  return (data.features || []).map((f: any) => ({
+  return (data.features || []).filter((f: any) => isRelevantPlace(query, f.place_name || '')).map((f: any) => ({
     id: f.id,
     place_name: f.place_name,
     center: f.center,
@@ -102,7 +151,7 @@ function vehicleProfileForRouting(v: VehicleKey): 'driving-traffic' | 'cycling' 
   return 'driving-traffic';
 }
 
-/* -------- PM2.5 cache (shared with previous version) -------- */
+/* -------- PM2.5 cache -------- */
 const PM25_TTL_MS = 15 * 60 * 1000;
 const PM25_STORAGE_KEY = 'airweave.pm25.cache.v1';
 type Pm25CacheEntry = { v: number; t: number };
@@ -123,6 +172,7 @@ const pm25Cache: Map<string, Pm25CacheEntry> = (() => {
   }
   return m;
 })();
+
 let persistTimer: ReturnType<typeof setTimeout> | undefined;
 function persistPm25Cache() {
   if (typeof window === 'undefined') return;
@@ -137,10 +187,15 @@ function persistPm25Cache() {
     }
   }, 500);
 }
+
 function pm25Key(lat: number, lng: number) {
   return `${lat.toFixed(3)},${lng.toFixed(3)}`;
 }
+
 async function fetchPm25(lat: number, lng: number): Promise<number> {
+  const fallbackPm25 = Math.round(22 + Math.abs(Math.sin(lat * 50 + lng * 50)) * 28);
+  if (shouldUseDemoData()) return fallbackPm25;
+
   const key = pm25Key(lat, lng);
   const hit = pm25Cache.get(key);
   if (hit && Date.now() - hit.t < PM25_TTL_MS) return hit.v;
@@ -148,13 +203,14 @@ async function fetchPm25(lat: number, lng: number): Promise<number> {
     const res = await fetch(
       `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lng}&current=pm2_5`
     );
+    if (!res.ok) return hit?.v ?? fallbackPm25;
     const data = await res.json();
-    const v = data.current?.pm2_5 ?? 0;
+    const v = data.current?.pm2_5 ?? fallbackPm25;
     pm25Cache.set(key, { v, t: Date.now() });
     persistPm25Cache();
     return v;
   } catch {
-    return hit?.v ?? 0;
+    return hit?.v ?? fallbackPm25;
   }
 }
 
@@ -213,7 +269,9 @@ async function buildScoredSegments(params: {
 }
 
 const SmartRoute = () => {
-  const { lang } = useOutletContext<{ lang: 'vi' | 'en' }>();
+  const demo = shouldUseDemoData();
+  const outletCtx = useOutletContext<{ lang?: 'vi' | 'en' }>() || {};
+  const lang = outletCtx.lang || 'vi';
   const { location: geoLocation, weather } = useLiveAirContext();
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
@@ -231,13 +289,27 @@ const SmartRoute = () => {
   const [sliderValue, setSliderValue] = useState<number>(50); // 0=time, 100=air
   const [sliderTouched, setSliderTouched] = useState(false);
   const [result, setResult] = useState<ResultBundle | null>(null);
+  const [activeRouteView, setActiveRouteView] = useState<'recommended' | 'fastest' | 'cleanest'>('recommended');
   const [loading, setLoading] = useState(false);
   const [searchingFrom, setSearchingFrom] = useState(false);
   const [searchingTo, setSearchingTo] = useState(false);
+  const fromSearchId = useRef(0);
+  const toSearchId = useRef(0);
   const [prefs, setPrefs] = useState<Prefs | null>(null);
 
   const fromDebounce = useRef<NodeJS.Timeout>();
   const toDebounce = useRef<NodeJS.Timeout>();
+
+  const swapPoints = () => {
+    const prevFromQ = fromQuery;
+    const prevFromC = fromCoords;
+    setFromQuery(toQuery);
+    setFromCoords(toCoords);
+    setToQuery(prevFromQ);
+    setToCoords(prevFromC);
+    setFromSuggestions([]);
+    setToSuggestions([]);
+  };
 
   // Load prefs and seed vehicle/slider from profile
   useEffect(() => {
@@ -276,15 +348,21 @@ const SmartRoute = () => {
   }, [geoLocation.loading, geoLocation.error, geoLocation.label, geoLocation.lat, geoLocation.lng]);
 
   const handleFromChange = (value: string) => {
+    const searchId = ++fromSearchId.current;
     setFromQuery(value);
     setFromCoords(null);
     clearTimeout(fromDebounce.current);
     if (value.length >= 3) {
       setSearchingFrom(true);
       fromDebounce.current = setTimeout(async () => {
-        const results = await geocodeSearch(value);
-        setFromSuggestions(results);
-        setSearchingFrom(false);
+        try {
+          const results = await geocodeSearch(value, [geoLocation.lng, geoLocation.lat]);
+          if (searchId === fromSearchId.current) setFromSuggestions(results);
+        } catch {
+          if (searchId === fromSearchId.current) setFromSuggestions([]);
+        } finally {
+          if (searchId === fromSearchId.current) setSearchingFrom(false);
+        }
       }, 400);
     } else {
       setFromSuggestions([]);
@@ -293,15 +371,21 @@ const SmartRoute = () => {
   };
 
   const handleToChange = (value: string) => {
+    const searchId = ++toSearchId.current;
     setToQuery(value);
     setToCoords(null);
     clearTimeout(toDebounce.current);
     if (value.length >= 3) {
       setSearchingTo(true);
       toDebounce.current = setTimeout(async () => {
-        const results = await geocodeSearch(value);
-        setToSuggestions(results);
-        setSearchingTo(false);
+        try {
+          const results = await geocodeSearch(value, [geoLocation.lng, geoLocation.lat]);
+          if (searchId === toSearchId.current) setToSuggestions(results);
+        } catch {
+          if (searchId === toSearchId.current) setToSuggestions([]);
+        } finally {
+          if (searchId === toSearchId.current) setSearchingTo(false);
+        }
       }, 400);
     } else {
       setToSuggestions([]);
@@ -353,7 +437,6 @@ const SmartRoute = () => {
       const reportsInBbox = await communityApi
         .listActive({ lat1: minLat, lng1: minLng, lat2: maxLat, lng2: maxLng })
         .catch(() => []);
-      // BE đã lọc theo bbox và hạn hiệu lực; chỉ cần lọc thêm mốc 30 phút gần nhất
       const reports = reportsInBbox.filter((r) => Date.parse(r.created_at) >= sinceMs);
 
       const dangerClusters = clusterReports(reports, 300, 3);
@@ -375,7 +458,6 @@ const SmartRoute = () => {
         }
       } catch { /* ignore */ }
 
-      // ---- Civic Hotspot Intelligence fusion ----
       // Sensitive profile = respiratory / cardio / child / elderly / respiratory group.
       const cond = prefs?.medical_history || [];
       const sensitiveProfile =
@@ -384,7 +466,7 @@ const SmartRoute = () => {
         prefs?.sensitive_group === 'elderly' ||
         prefs?.sensitive_group === 'respiratory';
 
-      // Pull WAQI stations in route bbox (best-effort; failures don't block routing).
+      // Pull WAQI stations in route bbox
       let stationsForFusion: { uid: string | number; lat: number; lng: number; aqi: number; station: string | null }[] = [];
       try {
         const stData = await airApi.waqiBounds(minLat, minLng, maxLat, maxLng);
@@ -394,7 +476,7 @@ const SmartRoute = () => {
           }));
         }
       } catch {
-        /* ignore — route still scored from community + open-meteo */
+        /* ignore */
       }
 
       const civicEvents = hotspotIntelligenceService.buildFromReports(
@@ -405,14 +487,11 @@ const SmartRoute = () => {
       const civicToAvoid = civicEvents.filter((ev) => {
         if (ev.confidence === 'high') return true;
         if (sensitiveProfile && ev.confidence === 'medium') {
-          // recent only — within last 60 minutes
           return nowMs - +new Date(ev.lastUpdated) <= 60 * 60 * 1000;
         }
         return false;
       });
 
-      // Merge civic-avoid points into danger clusters used by segment scorer,
-      // de-duplicating against existing community clusters within 250m.
       for (const ev of civicToAvoid) {
         const dup = dangerClusters.some(
           (d) => distMeters({ lat: ev.location.lat, lng: ev.location.lng }, d) <= 250
@@ -429,7 +508,6 @@ const SmartRoute = () => {
 
       const scored: ScoredRoute[] = await Promise.all(
         routes.slice(0, 3).map(async (r: any) => {
-          // Mapbox returns annotations on `legs[].annotation.congestion` (length = coords-1)
           const congestionPerCoord: (string | null)[] | null =
             (r.legs || []).flatMap((leg: any) => leg.annotation?.congestion || []) || null;
 
@@ -473,6 +551,7 @@ const SmartRoute = () => {
         civicAvoided: civicToAvoid,
         sensitiveProfile,
       });
+      setActiveRouteView('recommended');
     } catch (err) {
       console.error('Route search error:', err);
     }
@@ -507,454 +586,735 @@ const SmartRoute = () => {
     { key: 'walk', icon: <PersonStanding className="w-4 h-4" />, vi: 'Đi bộ', en: 'Walk' },
   ];
 
+  const currentActiveRoute = result ? result[activeRouteView] || result.recommended : null;
+
   return (
-    <div className="relative">
-      <ThematicWatermark />
-      <FeatureExperienceLayout
-        lang={lang}
-        heading={lang === 'vi' ? 'Lộ trình sạch theo AQI' : 'Clean route by AQI'}
-        subheading={lang === 'vi'
-          ? 'Tuyến đường ít PM2.5 hơn, tránh điểm nóng ô nhiễm gần đây.'
-          : 'Lower-PM2.5 routes that avoid recent pollution hotspots.'}
-        benefits={[
-          { title: lang === 'vi' ? 'Tuyến đường sạch hơn' : 'Cleaner routes',
-            text: lang === 'vi'
-              ? 'AirWeave phân tích AQI thời gian thực để đề xuất tuyến ít ô nhiễm hơn.'
-              : 'AirWeave analyses real-time AQI to suggest the lowest-PM2.5 route.',
-            icon: <WindIcon className="w-4 h-4" /> },
-          { title: lang === 'vi' ? 'Bảo vệ sức khỏe mỗi ngày' : 'Daily health protection',
-            text: lang === 'vi'
-              ? 'Giảm phơi nhiễm PM2.5, tránh điểm nóng dựa trên dữ liệu thật.'
-              : 'Reduce PM2.5 exposure, avoid hotspots from real data.',
-            icon: <HeartIcon className="w-4 h-4" /> },
-        ]}
-        chips={lang === 'vi'
-          ? ['So sánh tuyến', 'Cân bằng thời gian – không khí', 'Gợi ý theo vị trí']
-          : ['Route comparison', 'Time ↔ Air balance', 'GPS-aware']}
-      >
-        <div className="max-w-2xl mx-auto relative z-10">
-          <div className="flex items-center gap-2 mb-4">
-            <Route className="w-5 h-5 text-primary" />
-            <h1 className="font-heading text-xl font-bold text-foreground">
-              {lang === 'vi' ? 'Tìm tuyến của bạn' : 'Find your route'}
-            </h1>
+    <div className="min-h-full flex flex-col bg-[#050911] text-white relative overflow-x-hidden font-body selection:bg-cyan-500/30 selection:text-cyan-200">
+      <AuroraBackground />
+
+      <div className="relative z-10 max-w-[1750px] mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        {/* Top Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-white/5">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 shadow-lg shadow-cyan-500/10">
+              <Route className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl sm:text-2xl font-heading font-extrabold bg-gradient-to-r from-white via-cyan-100 to-sky-400 bg-clip-text text-transparent">
+                  {lang === 'vi' ? 'Lộ Trình Sạch Theo AQI' : 'Clean Route by AQI'}
+                </h1>
+                <span className="hidden md:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-heading font-semibold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                  <Sparkles className="w-3 h-3 text-cyan-400" />
+                  AI Clean Navigation
+                </span>
+              </div>
+              <p className="text-xs sm:text-sm text-gray-400 font-body mt-0.5">
+                {lang === 'vi'
+                  ? 'Phân tích nồng độ PM2.5 theo từng đoạn đường, tối ưu sức khoẻ và né tránh điểm nóng ô nhiễm.'
+                  : 'Real-time PM2.5 route scoring, exposure minimization & civic hotspot avoidance.'}
+              </p>
+            </div>
           </div>
 
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <DataStatusChip
+              status={demo ? 'demo' : 'estimated'}
+              lang={lang}
+              source={demo ? 'Demo dataset' : 'Mapbox + Open-Meteo'}
+              observedAt={Date.now()}
+            />
+          </div>
+        </div>
+
+        {/* High AQI Alert Banner */}
+        {(isAlertMode || (weather.aqi > 0 && weather.aqi >= 100)) && (
+          <div className="rounded-2xl p-4 bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-transparent border border-amber-500/30 backdrop-blur-xl flex items-start gap-3.5 shadow-lg shadow-amber-500/5">
+            <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 shrink-0">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-heading font-bold text-amber-300">
+                {lang === 'vi'
+                  ? `Cảnh báo chất lượng không khí: AQI hiện tại ${weather.aqi || '—'} (Kém / Không tốt)`
+                  : `Air Quality Alert: Current AQI ${weather.aqi || '—'} (Poor / Unhealthy)`}
+              </p>
+              <p className="text-xs text-gray-300 font-body mt-0.5 leading-relaxed">
+                {lang === 'vi'
+                  ? 'Vị trí hiện tại của bạn đã được điền sẵn. Hãy chọn điểm đến để hệ thống tìm tuyến đường có liều lượng hạt bụi mịn PM2.5 thấp nhất.'
+                  : 'Your current location is pre-filled. Enter destination to calculate the route minimizing your PM2.5 inhaled intake.'}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Main 2-Column Bento Grid */}
         <PremiumGate feature={lang === 'vi' ? 'Tìm đường sạch nhất' : 'Cleanest route finder'} lang={lang}>
-          <div className="space-y-6">
-            {(isAlertMode || (weather.aqi > 0 && weather.aqi >= 100)) && (
-              <div className="rounded-xl p-4 bg-orange-500/10 border border-orange-500/30 flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
-                <div className="min-w-0">
-                  <p className="text-sm font-heading font-bold text-orange-600">
-                    {lang === 'vi'
-                      ? `AQI hiện tại ${weather.aqi || '—'} — đề xuất tránh khu vực ô nhiễm`
-                      : `Current AQI ${weather.aqi || '—'} — avoid polluted areas`}
-                  </p>
-                  <p className="text-xs text-muted-foreground font-body mt-0.5">
-                    {lang === 'vi'
-                      ? 'Vị trí hiện tại đã được điền sẵn. Chọn điểm đến để xem lộ trình ít PM2.5 nhất.'
-                      : 'Your current location is pre-filled. Pick a destination to see the lowest-PM2.5 route.'}
-                  </p>
-                </div>
-              </div>
-            )}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
-            <div className="glass-card p-5 space-y-4">
-              <div className="space-y-3">
-                {/* FROM */}
-                <div className="relative">
-                  <Input
-                    placeholder={lang === 'vi' ? 'Điểm bắt đầu...' : 'Start point...'}
-                    value={fromQuery}
-                    onChange={(e) => handleFromChange(e.target.value)}
-                    className="pl-10 pr-20"
-                  />
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-green-500" />
-                  <button
-                    onClick={useCurrentLocation}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-primary hover:underline"
-                  >
-                    <MapPin className="w-3 h-3" />
-                    {lang === 'vi' ? 'Vị trí' : 'GPS'}
-                  </button>
-                  {searchingFrom && (
-                    <div className="absolute right-16 top-1/2 -translate-y-1/2">
-                      <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                    </div>
-                  )}
-                  {fromSuggestions.length > 0 && (
-                    <div className="absolute z-50 w-full mt-1 bg-background border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                      {fromSuggestions.map((s) => (
-                        <button
-                          key={s.id}
-                          onClick={() => selectFrom(s)}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors border-b border-border/50 last:border-0"
-                        >
-                          {s.place_name}
-                        </button>
-                      ))}
+            {/* LEFT COLUMN: Input Form & Result Cards (4 or 5 cols) */}
+            <div className="lg:col-span-5 xl:col-span-4 space-y-6">
+
+              {/* Form Card */}
+              <div className="rounded-3xl bg-gradient-to-br from-[#0B1528]/90 via-[#0D1D35]/85 to-[#08101E]/95 border border-sky-500/20 shadow-2xl backdrop-blur-xl p-5 sm:p-6 space-y-5">
+                <div className="flex items-center justify-between pb-3 border-b border-white/5">
+                  <div className="flex items-center gap-2">
+                    <Compass className="w-4 h-4 text-cyan-400" />
+                    <h2 className="text-sm font-heading font-bold text-white uppercase tracking-wider">
+                      {lang === 'vi' ? 'Thiết lập lộ trình' : 'Route Parameters'}
+                    </h2>
+                  </div>
+                  {personaLabel && (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-[11px] font-heading font-semibold text-cyan-300">
+                      <Heart className="w-3 h-3 text-cyan-400" />
+                      <span>{personaLabel}</span>
                     </div>
                   )}
                 </div>
 
-                {/* TO */}
-                <div className="relative">
-                  <Input
-                    placeholder={lang === 'vi' ? 'Điểm kết thúc...' : 'Destination...'}
-                    value={toQuery}
-                    onChange={(e) => handleToChange(e.target.value)}
-                    className="pl-10"
-                  />
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-red-500" />
-                  {searchingTo && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                      <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                    </div>
-                  )}
-                  {toSuggestions.length > 0 && (
-                    <div className="absolute z-50 w-full mt-1 bg-background border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                      {toSuggestions.map((s) => (
-                        <button
-                          key={s.id}
-                          onClick={() => selectTo(s)}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors border-b border-border/50 last:border-0"
-                        >
-                          {s.place_name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Vehicle selector */}
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-heading font-bold mb-1.5">
-                  {lang === 'vi' ? 'Phương tiện' : 'Vehicle'}
-                </p>
-                <div className="grid grid-cols-4 gap-1.5">
-                  {VEHICLE_OPTIONS.map((v) => (
+                {/* Input Fields with Swap button */}
+                <div className="space-y-2 relative">
+                  {/* Origin */}
+                  <div className="relative">
+                    <Input
+                      placeholder={lang === 'vi' ? 'Điểm xuất phát...' : 'Start point...'}
+                      value={fromQuery}
+                      onChange={(e) => handleFromChange(e.target.value)}
+                      className="pl-9 pr-20 h-11 bg-white/[0.04] border-white/10 text-white placeholder:text-gray-500 focus:border-cyan-400/60 focus:ring-1 focus:ring-cyan-400/30 rounded-xl text-xs sm:text-sm"
+                    />
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full bg-emerald-400 ring-4 ring-emerald-500/20" />
                     <button
-                      key={v.key}
                       type="button"
-                      onClick={() => setVehicle(v.key)}
-                      className={`flex flex-col items-center gap-1 p-2 rounded-lg border text-[11px] font-heading font-semibold transition-colors ${
-                        vehicle === v.key
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-border bg-muted/30 text-muted-foreground hover:border-primary/40'
-                      }`}
+                      onClick={useCurrentLocation}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1 px-2 py-1 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-[11px] font-heading font-semibold text-cyan-300 hover:bg-cyan-500/25 transition-all"
                     >
-                      {v.icon}
-                      <span className="leading-tight">{lang === 'vi' ? v.vi : v.en}</span>
+                      <MapPin className="w-3 h-3" />
+                      {lang === 'vi' ? 'GPS' : 'GPS'}
                     </button>
-                  ))}
-                </div>
-              </div>
+                    {searchingFrom && (
+                      <div className="absolute right-16 top-1/2 -translate-y-1/2">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+                      </div>
+                    )}
+                    {fromSuggestions.length > 0 && (
+                      <div className="absolute z-50 w-full mt-1 bg-[#0B1528]/95 border border-sky-500/30 rounded-xl shadow-2xl backdrop-blur-xl max-h-48 overflow-y-auto divide-y divide-sky-500/10">
+                        {fromSuggestions.map((s) => (
+                          <button
+                            key={s.id}
+                            onClick={() => selectFrom(s)}
+                            className="w-full text-left px-3.5 py-2.5 text-xs text-gray-200 hover:bg-cyan-500/20 hover:text-white transition-colors"
+                          >
+                            {s.place_name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {fromQuery.trim().length >= 3 && !fromCoords && !searchingFrom && fromSuggestions.length === 0 && (
+                      <p className="mt-1 text-[11px] text-amber-300">{lang === 'vi' ? 'Không tìm thấy địa điểm phù hợp. Hãy nhập địa chỉ cụ thể hơn.' : 'No matching place. Try a more specific address.'}</p>
+                    )}
+                  </div>
 
-              {/* Departure mode */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <Clock className="w-4 h-4 text-muted-foreground shrink-0" />
-                <div className="inline-flex rounded-lg border border-border overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() => setDepartureMode('now')}
-                    className={`px-3 py-1.5 text-xs font-heading font-semibold transition-colors ${
-                      departureMode === 'now' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground'
-                    }`}
-                  >
-                    {lang === 'vi' ? 'Bây giờ' : 'Now'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDepartureMode('schedule')}
-                    className={`px-3 py-1.5 text-xs font-heading font-semibold transition-colors ${
-                      departureMode === 'schedule' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground'
-                    }`}
-                  >
-                    {lang === 'vi' ? 'Lên lịch' : 'Schedule'}
-                  </button>
+                  {/* Swap Button */}
+                  <div className="flex justify-end pr-3 -my-1 relative z-10">
+                    <button
+                      type="button"
+                      onClick={swapPoints}
+                      title={lang === 'vi' ? 'Đảo điểm đi và đến' : 'Swap points'}
+                      className="p-1.5 rounded-full bg-[#0D1D35] border border-sky-500/30 text-cyan-300 hover:bg-cyan-500/20 hover:border-cyan-400/60 shadow-md transition-all active:scale-90"
+                    >
+                      <ArrowUpDown className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Destination */}
+                  <div className="relative">
+                    <Input
+                      placeholder={lang === 'vi' ? 'Điểm đến...' : 'Destination...'}
+                      value={toQuery}
+                      onChange={(e) => handleToChange(e.target.value)}
+                      className="pl-9 pr-10 h-11 bg-white/[0.04] border-white/10 text-white placeholder:text-gray-500 focus:border-cyan-400/60 focus:ring-1 focus:ring-cyan-400/30 rounded-xl text-xs sm:text-sm"
+                    />
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full bg-rose-500 ring-4 ring-rose-500/20" />
+                    {searchingTo && (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+                      </div>
+                    )}
+                    {toSuggestions.length > 0 && (
+                      <div className="absolute z-50 w-full mt-1 bg-[#0B1528]/95 border border-sky-500/30 rounded-xl shadow-2xl backdrop-blur-xl max-h-48 overflow-y-auto divide-y divide-sky-500/10">
+                        {toSuggestions.map((s) => (
+                          <button
+                            key={s.id}
+                            onClick={() => selectTo(s)}
+                            className="w-full text-left px-3.5 py-2.5 text-xs text-gray-200 hover:bg-cyan-500/20 hover:text-white transition-colors"
+                          >
+                            {s.place_name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {toQuery.trim().length >= 3 && !toCoords && !searchingTo && toSuggestions.length === 0 && (
+                      <p className="mt-1 text-[11px] text-amber-300">{lang === 'vi' ? 'Không tìm thấy địa điểm phù hợp. Hãy nhập địa chỉ cụ thể hơn.' : 'No matching place. Try a more specific address.'}</p>
+                    )}
+                  </div>
                 </div>
-                {departureMode === 'schedule' && (
-                  <Input
-                    type="time"
-                    value={departureTime}
-                    onChange={(e) => setDepartureTime(e.target.value)}
-                    className="w-28 h-8 text-xs"
+
+                {/* Vehicle Selector */}
+                <div className="space-y-2">
+                  <p className="text-[11px] uppercase tracking-wider text-gray-400 font-heading font-semibold">
+                    {lang === 'vi' ? 'Phương tiện di chuyển' : 'Vehicle'}
+                  </p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {VEHICLE_OPTIONS.map((v) => {
+                      const active = vehicle === v.key;
+                      return (
+                        <button
+                          key={v.key}
+                          type="button"
+                          onClick={() => setVehicle(v.key)}
+                          className={`flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-xl border text-xs font-heading font-semibold transition-all ${
+                            active
+                              ? 'bg-cyan-500/20 border-cyan-400/60 text-cyan-300 shadow-md shadow-cyan-500/20'
+                              : 'bg-white/[0.03] border-white/10 text-gray-400 hover:border-white/20 hover:text-white'
+                          }`}
+                        >
+                          <div className={active ? 'text-cyan-300 scale-110 transition-transform' : 'text-gray-400'}>
+                            {v.icon}
+                          </div>
+                          <span className="leading-none text-[11px]">{lang === 'vi' ? v.vi : v.en}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Departure Time Mode */}
+                <div className="flex items-center justify-between gap-3 pt-1">
+                  <div className="flex items-center gap-2 text-xs font-body text-gray-300">
+                    <Clock className="w-4 h-4 text-cyan-400 shrink-0" />
+                    <span>{lang === 'vi' ? 'Thời điểm đi:' : 'Departure:'}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="inline-flex rounded-xl p-0.5 bg-black/40 border border-white/10">
+                      <button
+                        type="button"
+                        onClick={() => setDepartureMode('now')}
+                        className={`px-3 py-1 text-xs font-heading font-semibold rounded-lg transition-all ${
+                          departureMode === 'now'
+                            ? 'bg-cyan-500/25 text-cyan-300 shadow-sm'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        {lang === 'vi' ? 'Bây giờ' : 'Now'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDepartureMode('schedule')}
+                        className={`px-3 py-1 text-xs font-heading font-semibold rounded-lg transition-all ${
+                          departureMode === 'schedule'
+                            ? 'bg-cyan-500/25 text-cyan-300 shadow-sm'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        {lang === 'vi' ? 'Lên lịch' : 'Schedule'}
+                      </button>
+                    </div>
+                    {departureMode === 'schedule' && (
+                      <Input
+                        type="time"
+                        value={departureTime}
+                        onChange={(e) => setDepartureTime(e.target.value)}
+                        className="w-24 h-8 text-xs bg-white/[0.04] border-white/10 text-white rounded-lg px-2"
+                      />
+                    )}
+                  </div>
+                </div>
+
+                {/* Time vs Air slider */}
+                <div className="space-y-2 pt-1 border-t border-white/5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-heading font-semibold text-gray-300">
+                      {lang === 'vi' ? 'Cân bằng: Tốc độ ↔ Không khí' : 'Balance: Time ↔ Air'}
+                    </span>
+                    <span className="text-cyan-400 font-heading font-bold text-xs bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-500/20">
+                      α={derivedWeights.alpha.toFixed(2)} · β={derivedWeights.beta.toFixed(2)}
+                    </span>
+                  </div>
+                  <Slider
+                    value={[sliderValue]}
+                    onValueChange={(v) => {
+                      setSliderTouched(true);
+                      setSliderValue(v[0]);
+                    }}
+                    min={0}
+                    max={100}
+                    step={5}
+                    className="py-1"
                   />
-                )}
+                  <div className="flex items-center justify-between text-[10px] text-gray-400 font-body">
+                    <span className="flex items-center gap-1">⚡ {lang === 'vi' ? 'Nhanh nhất' : 'Fastest'}</span>
+                    <span className="flex items-center gap-1">🌿 {lang === 'vi' ? 'Sạch nhất' : 'Cleanest'}</span>
+                  </div>
+                </div>
+
+                {/* Search Button */}
+                <Button
+                  className="w-full h-11 font-heading font-bold gap-2 text-white bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 border border-cyan-400/40 shadow-lg shadow-cyan-500/25 transition-all rounded-xl active:scale-[0.98]"
+                  onClick={handleSearch}
+                  disabled={!fromCoords || !toCoords || loading}
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                      {lang === 'vi' ? 'Đang phân tích lộ trình...' : 'Calculating cleanest routes...'}
+                    </>
+                  ) : (
+                    <>
+                      <Navigation className="w-4 h-4 text-cyan-200" />
+                      {lang === 'vi' ? 'Tìm Lộ Trình Sạch Tối Ưu' : 'Find Cleanest Route'}
+                    </>
+                  )}
+                </Button>
               </div>
 
-              {/* Time vs Air slider */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-[11px] font-body">
-                  <span className="font-heading font-bold text-muted-foreground uppercase tracking-wider">
-                    {lang === 'vi' ? 'Thời gian ↔ Không khí' : 'Time ↔ Air'}
-                  </span>
-                  <span className="text-primary font-heading font-bold">
-                    α={derivedWeights.alpha.toFixed(2)} · β={derivedWeights.beta.toFixed(2)}
-                  </span>
-                </div>
-                <Slider
-                  value={[sliderValue]}
-                  onValueChange={(v) => {
-                    setSliderTouched(true);
-                    setSliderValue(v[0]);
-                  }}
-                  min={0}
-                  max={100}
-                  step={5}
-                />
-                <div className="flex items-center justify-between text-[10px] text-muted-foreground font-body">
-                  <span>⚡ {lang === 'vi' ? 'Nhanh nhất' : 'Fastest'}</span>
-                  <span>🌿 {lang === 'vi' ? 'Sạch nhất' : 'Cleanest'}</span>
-                </div>
-              </div>
-
-              {personaLabel && (
-                <div className="flex items-center gap-2 text-[11px] font-body text-muted-foreground bg-muted/50 rounded-lg px-3 py-1.5">
-                  <Heart className="w-3 h-3 text-primary" />
-                  {lang === 'vi' ? 'Cá nhân hoá theo:' : 'Personalised for:'}{' '}
-                  <span className="font-heading font-bold text-foreground">{personaLabel}</span>
+              {/* Loading Indicator */}
+              {loading && (
+                <div className="rounded-3xl bg-gradient-to-br from-[#0B1528]/90 via-[#0D1D35]/85 to-[#08101E]/95 border border-cyan-500/20 p-6 shadow-xl text-center">
+                  <WindBoomerangLoader
+                    text={lang === 'vi' ? 'Đang phân tích 3 phương án lộ trình & nồng độ PM2.5...' : 'Analyzing 3 route variations & PM2.5 exposure...'}
+                  />
                 </div>
               )}
 
-              <Button
-                className="w-full font-heading font-semibold gap-2"
-                onClick={handleSearch}
-                disabled={!fromCoords || !toCoords || loading}
-              >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}
-                {lang === 'vi' ? 'Tìm lộ trình sạch' : 'Find Clean Route'}
-              </Button>
-            </div>
-
-            {loading && (
-              <WindBoomerangLoader
-                text={lang === 'vi' ? 'Đang phân tích dữ liệu không khí trên 3 lộ trình...' : 'Analyzing air quality across 3 routes...'}
-              />
-            )}
-
-            {result && !loading && (
-              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-                {fromCoords && toCoords && (
-                  <RouteMap
-                    from={fromCoords}
-                    to={toCoords}
-                    cleanSegments={result.recommended.segments}
-                    fastGeo={result.fastest === result.recommended ? null : result.fastest.geometry}
-                    dangerZones={result.dangerZones}
-                  />
-                )}
-
-                {/* Route summary — origin / destination / risk / data status */}
-                <div className="glass-card p-4 border border-primary/20">
-                  <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
-                    <h3 className="font-heading text-sm font-bold text-foreground">
-                      {lang === 'vi' ? 'Tóm tắt lộ trình' : 'Route summary'}
-                    </h3>
-                    <DataStatusChip
-                      status={USE_DEMO_DATA ? 'demo' : (result.recommended.segments.length > 0 ? 'estimated' : 'unavailable')}
-                      lang={lang}
-                      source={USE_DEMO_DATA ? 'Demo dataset' : 'Mapbox + Open-Meteo'}
-                      observedAt={Date.now()}
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-body text-foreground">
-                    <div className="flex gap-2"><MapPin className="w-3 h-3 text-green-500 mt-0.5 shrink-0" /><span className="truncate"><b>{lang === 'vi' ? 'Đi từ' : 'From'}:</b> {fromQuery || `${fromCoords?.[1]},${fromCoords?.[0]}`}</span></div>
-                    <div className="flex gap-2"><MapPin className="w-3 h-3 text-red-500 mt-0.5 shrink-0" /><span className="truncate"><b>{lang === 'vi' ? 'Đến' : 'To'}:</b> {toQuery || `${toCoords?.[1]},${toCoords?.[0]}`}</span></div>
-                    <div><b>PM2.5 {lang === 'vi' ? 'trung bình' : 'avg'}:</b> {result.recommended.avgPm25} µg/m³</div>
-                    <div><b>{lang === 'vi' ? 'Mức rủi ro' : 'Risk level'}:</b>{' '}
-                      <span className={
-                        result.recommended.avgPm25 >= 55 ? 'text-red-600 font-heading font-bold' :
-                        result.recommended.avgPm25 >= 35 ? 'text-orange-500 font-heading font-bold' :
-                        result.recommended.avgPm25 >= 15 ? 'text-amber-500 font-heading font-bold' :
-                        'text-green-600 font-heading font-bold'
-                      }>
-                        {result.recommended.avgPm25 >= 55 ? (lang === 'vi' ? 'Cao' : 'High') :
-                         result.recommended.avgPm25 >= 35 ? (lang === 'vi' ? 'Trung bình-Cao' : 'Moderate-High') :
-                         result.recommended.avgPm25 >= 15 ? (lang === 'vi' ? 'Trung bình' : 'Moderate') :
-                         (lang === 'vi' ? 'Thấp' : 'Low')}
-                      </span>
-                    </div>
-                    <div><b>{lang === 'vi' ? 'Điểm nóng đã né' : 'Hotspots avoided'}:</b> {result.civicAvoided.length + result.dangerZones.length}</div>
-                    <div><b>{lang === 'vi' ? 'Nguồn dữ liệu' : 'Data status'}:</b> Mapbox · Open-Meteo · WAQI · Community {USE_DEMO_DATA ? '· DEMO' : ''}</div>
-                    <div className="sm:col-span-2 text-muted-foreground"><b>{lang === 'vi' ? 'Cập nhật' : 'Last updated'}:</b> {new Date().toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US')}</div>
-                  </div>
-                  <p className="text-[10px] text-muted-foreground font-body mt-2 italic">
-                    {lang === 'vi'
-                      ? 'AirWeave đề xuất tuyến này để tránh khu vực AQI cao và điểm nóng ô nhiễm gần đây nếu dữ liệu khả dụng. Chưa tính chính xác mức giảm phơi nhiễm thực tế.'
-                      : 'AirWeave suggests this route to avoid high-AQI areas and recent pollution hotspots where data is available. Exact exposure reduction is not claimed.'}
-                  </p>
-                </div>
-
-                {result.dangerZones.length > 0 && (
-                  <div className="rounded-xl p-3 bg-destructive/10 border border-destructive/30 flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
-                    <p className="text-xs font-body text-foreground">
-                      <span className="font-heading font-bold text-destructive">
-                        {result.dangerZones.length}{' '}
-                        {lang === 'vi' ? 'khu vực cảnh báo từ cộng đồng' : 'community alert zones'}
-                      </span>
-                      {' — '}
-                      {lang === 'vi'
-                        ? 'tuyến đường đã tự động né.'
-                        : 'route automatically avoids these areas.'}
-                    </p>
-                  </div>
-                )}
-
-                {result.civicAvoided.length > 0 && (
-                  <div className="rounded-xl p-3 bg-orange-500/10 border border-orange-500/30 flex items-start gap-2">
-                    <Shield className="w-4 h-4 text-orange-500 shrink-0 mt-0.5" />
-                    <div className="min-w-0 text-xs font-body text-foreground space-y-1">
-                      <p>
-                        <span className="font-heading font-bold text-orange-600">
-                          {lang === 'vi' ? 'Civic Hotspot Intelligence' : 'Civic Hotspot Intelligence'}
-                        </span>
-                        {' — '}
-                        {lang === 'vi'
-                          ? `né ${result.civicAvoided.length} điểm nóng ô nhiễm (cao${
-                              result.sensitiveProfile ? ' + trung bình gần đây' : ''
-                            }).`
-                          : `avoiding ${result.civicAvoided.length} pollution hotspot${
-                              result.civicAvoided.length > 1 ? 's' : ''
-                            } (high${result.sensitiveProfile ? ' + recent medium' : ''}).`}
-                      </p>
-                      <ul className="text-[11px] text-muted-foreground list-disc pl-4 space-y-0.5">
-                        {result.civicAvoided.slice(0, 3).map((ev) => (
-                          <li key={ev.id}>
-                            <span className="font-heading font-semibold text-foreground">
-                              {ev.eventType.replace(/_/g, ' ')}
-                            </span>
-                            {' · '}
-                            {ev.sourceLabel}
-                            {' · '}
-                            {lang === 'vi' ? 'tin cậy' : 'confidence'} {ev.confidence}
-                          </li>
-                        ))}
-                      </ul>
-                      {result.sensitiveProfile && (
-                        <p className="text-[11px] text-muted-foreground italic">
-                          {lang === 'vi'
-                            ? 'Áp dụng quy tắc nhạy cảm theo hồ sơ sức khoẻ của bạn.'
-                            : 'Sensitive-profile rule applied based on your health profile.'}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Recommended */}
-                <div className="glass-card p-5 border-2 border-green-500/30">
-                  <div className="flex items-center gap-2 mb-3 flex-wrap">
-                    <Shield className="w-5 h-5 text-green-600 shrink-0" />
-                    <h3 className="font-heading text-base font-bold text-foreground">
-                      {lang === 'vi' ? 'Khuyên dùng' : 'Recommended'}
-                    </h3>
-                    <span className="ml-auto px-2 py-0.5 rounded-full bg-green-500/20 text-green-600 text-[10px] font-heading font-semibold">
-                      {VEHICLES[vehicle].label} · α={result.weights.alpha.toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
-                    <Stat
-                      label={lang === 'vi' ? 'Thời gian' : 'Duration'}
-                      value={`${result.recommended.duration} min`}
-                      sub={result.extraMinutes > 0 ? `+${result.extraMinutes} min` : undefined}
-                    />
-                    <Stat label={lang === 'vi' ? 'Khoảng cách' : 'Distance'} value={`${result.recommended.distance} km`} />
-                    <Stat label={lang === 'vi' ? 'Phơi nhiễm' : 'Exposure'} value={`${result.recommended.exposure} µg·min`} />
-                    <Stat label={lang === 'vi' ? 'Giảm' : 'Reduction'} value={`-${result.reductionPct}%`} highlight />
-                  </div>
-                  <Button
-                    onClick={() => startNavigation(result.recommended.geometry)}
-                    className="w-full font-heading font-semibold gap-2"
+              {/* Route Results Cards (Left column when results available) */}
+              {result && !loading && (
+                <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+                  {/* RECOMMENDED ROUTE CARD */}
+                  <div
+                    onClick={() => setActiveRouteView('recommended')}
+                    className={`cursor-pointer rounded-3xl p-5 border-2 transition-all ${
+                      activeRouteView === 'recommended'
+                        ? 'border-emerald-500/80 bg-gradient-to-br from-emerald-950/40 via-[#0B1528]/95 to-[#08101E]/95 shadow-xl shadow-emerald-500/15 ring-2 ring-emerald-500/20'
+                        : 'border-emerald-500/30 bg-[#0B1528]/70 hover:border-emerald-500/50'
+                    }`}
                   >
-                    <Play className="w-4 h-4" />
-                    {lang === 'vi' ? 'Bắt đầu đi' : 'Start navigation'}
-                  </Button>
-                </div>
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 rounded-xl bg-emerald-500/20 text-emerald-400">
+                          <ShieldCheck className="w-4 h-4" />
+                        </div>
+                        <h3 className="font-heading text-sm sm:text-base font-bold text-white">
+                          {lang === 'vi' ? 'Tuyến khuyên dùng' : 'Recommended Route'}
+                        </h3>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {result.reductionPct > 0 && (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 text-[11px] font-heading font-bold">
+                            -{result.reductionPct}% {lang === 'vi' ? 'phơi nhiễm' : 'exposure'}
+                          </span>
+                        )}
+                        <span className="px-2 py-0.5 rounded-full bg-white/[0.05] border border-white/10 text-gray-400 text-[10px] font-heading">
+                          α={result.weights.alpha.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
 
-                {/* Fastest */}
-                {result.fastest !== result.recommended && (
-                  <div className="glass-card p-5 opacity-80">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Zap className="w-5 h-5 text-orange-500 shrink-0" />
-                      <h3 className="font-heading text-base font-bold text-foreground">
-                        {lang === 'vi' ? 'Nhanh nhất' : 'Fastest'}
-                      </h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+                      <Stat
+                        label={lang === 'vi' ? 'Thời gian' : 'Duration'}
+                        value={`${result.recommended.duration} min`}
+                        sub={result.extraMinutes > 0 ? `+${result.extraMinutes}m` : undefined}
+                      />
+                      <Stat label={lang === 'vi' ? 'Khoảng cách' : 'Distance'} value={`${result.recommended.distance} km`} />
+                      <Stat label="PM2.5" value={`${result.recommended.avgPm25}`} variant="emerald" />
+                      <Stat
+                        label={lang === 'vi' ? 'Phơi nhiễm' : 'Exposure'}
+                        value={`${result.recommended.exposure}`}
+                        variant="emerald"
+                      />
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
-                      <Stat label={lang === 'vi' ? 'Thời gian' : 'Duration'} value={`${result.fastest.duration} min`} />
-                      <Stat label={lang === 'vi' ? 'Khoảng cách' : 'Distance'} value={`${result.fastest.distance} km`} />
-                      <Stat label={lang === 'vi' ? 'Phơi nhiễm' : 'Exposure'} value={`${result.fastest.exposure} µg·min`} />
-                      <Stat label="PM2.5" value={`${result.fastest.avgPm25} µg/m³`} />
-                    </div>
+
                     <Button
-                      onClick={() => startNavigation(result.fastest.geometry)}
-                      className="w-full font-heading font-semibold gap-2"
-                      variant="outline"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        startNavigation(result.recommended.geometry);
+                      }}
+                      className="w-full font-heading font-semibold gap-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-lg shadow-emerald-600/20"
                     >
-                      <Play className="w-4 h-4" />
-                      {lang === 'vi' ? 'Đi đường này' : 'Use this route'}
+                      <Play className="w-4 h-4 fill-current" />
+                      {lang === 'vi' ? 'Bắt đầu đi tuyến này' : 'Navigate Recommended'}
                     </Button>
                   </div>
-                )}
 
-                {fromCoords && toCoords && (
-                  <MobilityHandoff
+                  {/* FASTEST ROUTE CARD (if distinct) */}
+                  {result.fastest !== result.recommended && (
+                    <div
+                      onClick={() => setActiveRouteView('fastest')}
+                      className={`cursor-pointer rounded-3xl p-5 border transition-all ${
+                        activeRouteView === 'fastest'
+                          ? 'border-amber-500/80 bg-gradient-to-br from-amber-950/30 via-[#0B1528]/95 to-[#08101E]/95 shadow-xl shadow-amber-500/10 ring-2 ring-amber-500/20'
+                          : 'border-amber-500/20 bg-[#0B1528]/70 hover:border-amber-500/40 opacity-85'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1.5 rounded-xl bg-amber-500/20 text-amber-400">
+                            <Zap className="w-4 h-4" />
+                          </div>
+                          <h3 className="font-heading text-sm font-bold text-white">
+                            {lang === 'vi' ? 'Tuyến nhanh nhất' : 'Fastest Route'}
+                          </h3>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[10px] font-heading font-bold">
+                          ⚡ {result.fastest.duration} min
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                        <Stat label={lang === 'vi' ? 'Thời gian' : 'Duration'} value={`${result.fastest.duration}m`} variant="amber" />
+                        <Stat label={lang === 'vi' ? 'Khoảng cách' : 'Distance'} value={`${result.fastest.distance}km`} />
+                        <Stat label="PM2.5" value={`${result.fastest.avgPm25}`} />
+                        <Stat label={lang === 'vi' ? 'Phơi nhiễm' : 'Exposure'} value={`${result.fastest.exposure}`} />
+                      </div>
+
+                      <Button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          startNavigation(result.fastest.geometry);
+                        }}
+                        variant="outline"
+                        className="w-full font-heading font-semibold gap-2 border-white/10 hover:bg-white/[0.06] text-gray-200 rounded-xl"
+                      >
+                        <Play className="w-3.5 h-3.5" />
+                        {lang === 'vi' ? 'Chọn tuyến nhanh' : 'Use Fastest'}
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* CLEANEST ROUTE CARD (if distinct from recommended and fastest) */}
+                  {result.cleanest !== result.recommended && result.cleanest !== result.fastest && (
+                    <div
+                      onClick={() => setActiveRouteView('cleanest')}
+                      className={`cursor-pointer rounded-3xl p-5 border transition-all ${
+                        activeRouteView === 'cleanest'
+                          ? 'border-cyan-500/80 bg-gradient-to-br from-cyan-950/30 via-[#0B1528]/95 to-[#08101E]/95 shadow-xl shadow-cyan-500/10 ring-2 ring-cyan-500/20'
+                          : 'border-cyan-500/20 bg-[#0B1528]/70 hover:border-cyan-500/40 opacity-85'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1.5 rounded-xl bg-cyan-500/20 text-cyan-400">
+                            <Leaf className="w-4 h-4" />
+                          </div>
+                          <h3 className="font-heading text-sm font-bold text-white">
+                            {lang === 'vi' ? 'Tuyến sạch tuyệt đối' : 'Cleanest Exposure'}
+                          </h3>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 text-[10px] font-heading font-bold">
+                          🌿 {result.cleanest.avgPm25} µg/m³
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                        <Stat label={lang === 'vi' ? 'Thời gian' : 'Duration'} value={`${result.cleanest.duration}m`} />
+                        <Stat label={lang === 'vi' ? 'Khoảng cách' : 'Distance'} value={`${result.cleanest.distance}km`} />
+                        <Stat label="PM2.5" value={`${result.cleanest.avgPm25}`} variant="cyan" />
+                        <Stat label={lang === 'vi' ? 'Phơi nhiễm' : 'Exposure'} value={`${result.cleanest.exposure}`} variant="cyan" />
+                      </div>
+
+                      <Button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          startNavigation(result.cleanest.geometry);
+                        }}
+                        variant="outline"
+                        className="w-full font-heading font-semibold gap-2 border-white/10 hover:bg-white/[0.06] text-gray-200 rounded-xl"
+                      >
+                        <Play className="w-3.5 h-3.5" />
+                        {lang === 'vi' ? 'Chọn tuyến sạch nhất' : 'Use Cleanest'}
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Mobility App Handoff */}
+                  {fromCoords && toCoords && (
+                    <MobilityHandoff
+                      lang={lang}
+                      origin={{ lat: fromCoords[1], lng: fromCoords[0], label: fromQuery }}
+                      destination={{ lat: toCoords[1], lng: toCoords[0], label: toQuery }}
+                    />
+                  )}
+                </motion.div>
+              )}
+            </div>
+
+            {/* RIGHT COLUMN: Interactive Route Map & Telemetry Dashboard (7 or 8 cols) */}
+            <div className="lg:col-span-7 xl:col-span-8 space-y-6">
+
+              {/* Map & Telemetry HUD Card */}
+              <div className="rounded-3xl bg-gradient-to-br from-[#0B1528]/90 via-[#0D1D35]/85 to-[#08101E]/95 border border-sky-500/20 shadow-2xl backdrop-blur-xl p-5 sm:p-6 overflow-hidden flex flex-col space-y-4">
+
+                {/* HUD Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/5">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Layers className="w-5 h-5 text-cyan-400 shrink-0" />
+                    <div className="min-w-0">
+                      <h2 className="font-heading text-base font-bold text-white truncate flex items-center gap-2">
+                        {lang === 'vi' ? 'Bản Đồ Lộ Trình & Chất Lượng Không Khí' : 'Route Map & Air Quality Overlay'}
+                      </h2>
+                      <p className="text-xs text-gray-400 font-body truncate">
+                        {fromCoords && toCoords
+                          ? `${fromQuery.split(',')[0] || 'A'} ➔ ${toQuery.split(',')[0] || 'B'}`
+                          : (lang === 'vi' ? 'Trực quan hoá nồng độ PM2.5 theo từng phân đoạn lộ trình' : 'Visualizing PM2.5 concentration across route segments')}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Route View Switcher Tabs (when result available) */}
+                  {result && (
+                    <div className="inline-flex rounded-xl p-0.5 bg-black/40 border border-white/10 shrink-0 self-start sm:self-auto">
+                      <button
+                        type="button"
+                        onClick={() => setActiveRouteView('recommended')}
+                        className={`px-3 py-1 text-xs font-heading font-semibold rounded-lg transition-all ${
+                          activeRouteView === 'recommended'
+                            ? 'bg-emerald-500/25 text-emerald-300 shadow-sm'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        {lang === 'vi' ? 'Khuyên dùng' : 'Recommended'}
+                      </button>
+                      {result.fastest !== result.recommended && (
+                        <button
+                          type="button"
+                          onClick={() => setActiveRouteView('fastest')}
+                          className={`px-3 py-1 text-xs font-heading font-semibold rounded-lg transition-all ${
+                            activeRouteView === 'fastest'
+                              ? 'bg-amber-500/25 text-amber-300 shadow-sm'
+                              : 'text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          {lang === 'vi' ? 'Nhanh nhất' : 'Fastest'}
+                        </button>
+                      )}
+                      {result.cleanest !== result.recommended && result.cleanest !== result.fastest && (
+                        <button
+                          type="button"
+                          onClick={() => setActiveRouteView('cleanest')}
+                          className={`px-3 py-1 text-xs font-heading font-semibold rounded-lg transition-all ${
+                            activeRouteView === 'cleanest'
+                              ? 'bg-cyan-500/25 text-cyan-300 shadow-sm'
+                              : 'text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          {lang === 'vi' ? 'Sạch nhất' : 'Cleanest'}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Map Display or Empty State Preview */}
+                <div className="w-full relative rounded-2xl overflow-hidden border border-white/10 bg-[#060D19] min-h-[500px] lg:h-[600px] flex items-center justify-center">
+                  {fromCoords && toCoords && currentActiveRoute ? (
+                    <RouteMap
+                      from={fromCoords}
+                      to={toCoords}
+                      cleanSegments={currentActiveRoute.segments}
+                      fastGeo={activeRouteView === 'fastest' ? null : (result?.fastest === currentActiveRoute ? null : result?.fastest.geometry || null)}
+                      dangerZones={result?.dangerZones}
+                      className="w-full h-full"
+                    />
+                  ) : (
+                    <div className="p-8 max-w-md text-center space-y-4">
+                      <div className="w-16 h-16 rounded-3xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 mx-auto flex items-center justify-center shadow-lg shadow-cyan-500/10">
+                        <Route className="w-8 h-8 animate-pulse text-cyan-400" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-heading font-bold text-white">
+                          {lang === 'vi' ? 'Chưa Có Lộ Trình Được Chọn' : 'No Route Selected Yet'}
+                        </h3>
+                        <p className="text-xs text-gray-400 font-body mt-1 leading-relaxed">
+                          {lang === 'vi'
+                            ? 'Vui lòng nhập điểm xuất phát và điểm đến ở cột bên trái, sau đó bấm "Tìm Lộ Trình Sạch Tối Ưu" để hệ thống tính toán ma trận AQI đa điểm.'
+                            : 'Enter your start point and destination on the left, then click "Find Cleanest Route" to render multi-segment PM2.5 heatmaps.'}
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 text-left pt-2">
+                        <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1">
+                          <p className="text-[11px] font-heading font-semibold text-cyan-300">🛡️ {lang === 'vi' ? 'Né điểm ô nhiễm' : 'Avoid pollution hotspots'}</p>
+                          <p className="text-[10px] text-gray-400">{lang === 'vi' ? 'Tự động né điểm nóng đốt rác, công trường & trạm quan trắc cao.' : 'Automatically avoids waste burning, construction dust, and high-reading stations.'}</p>
+                        </div>
+                        <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1">
+                          <p className="text-[11px] font-heading font-semibold text-emerald-300">🌿 {lang === 'vi' ? 'Bảo vệ hô hấp' : 'Respiratory protection'}</p>
+                          <p className="text-[10px] text-gray-400">{lang === 'vi' ? 'Cá nhân hoá trọng số phơi nhiễm theo hồ sơ nhạy cảm của bạn.' : 'Personalizes exposure weighting using your sensitivity profile.'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Telemetry Summary Bar (when result is present) */}
+                {result && currentActiveRoute && (
+                  <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                    <div>
+                      <p className="text-[10px] uppercase font-heading text-gray-400 tracking-wider">{lang === 'vi' ? 'PM2.5 Trung bình' : 'Average PM2.5'}</p>
+                      <p className="text-sm font-heading font-bold text-white mt-0.5">{currentActiveRoute.avgPm25} µg/m³</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase font-heading text-gray-400 tracking-wider">{lang === 'vi' ? 'Mức rủi ro' : 'Risk level'}</p>
+                      <p className={`text-sm font-heading font-bold mt-0.5 ${
+                        currentActiveRoute.avgPm25 >= 55 ? 'text-red-400' :
+                        currentActiveRoute.avgPm25 >= 35 ? 'text-orange-400' :
+                        currentActiveRoute.avgPm25 >= 15 ? 'text-amber-400' :
+                        'text-emerald-400'
+                      }`}>
+                        {currentActiveRoute.avgPm25 >= 55 ? (lang === 'vi' ? 'Cao' : 'High') :
+                         currentActiveRoute.avgPm25 >= 35 ? (lang === 'vi' ? 'Trung bình - Cao' : 'Mod - High') :
+                         currentActiveRoute.avgPm25 >= 15 ? (lang === 'vi' ? 'Trung bình' : 'Moderate') :
+                         (lang === 'vi' ? 'An toàn' : 'Low')}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase font-heading text-gray-400 tracking-wider">{lang === 'vi' ? 'Điểm cảnh báo né' : 'Hotspots avoided'}</p>
+                      <p className="text-sm font-heading font-bold text-cyan-400 mt-0.5">
+                        {result.civicAvoided.length + result.dangerZones.length} {lang === 'vi' ? 'điểm' : 'hotspots'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase font-heading text-gray-400 tracking-wider">{lang === 'vi' ? 'Trạng thái dữ liệu' : 'Data status'}</p>
+                      <p className="text-sm font-heading font-bold text-emerald-400 mt-0.5">Live Open-Meteo</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Civic Hotspots Avoided Alert Box */}
+              {result && result.civicAvoided.length > 0 && (
+                <div className="rounded-3xl p-5 bg-gradient-to-br from-amber-500/15 via-[#0D1D35]/85 to-[#08101E]/95 border border-amber-500/30 shadow-xl backdrop-blur-xl flex items-start gap-3.5">
+                  <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 shrink-0 mt-0.5">
+                    <Shield className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0 space-y-2 text-xs">
+                    <div>
+                      <p className="font-heading font-bold text-amber-300 text-sm">
+                        {lang === 'vi' ? 'Trí tuệ điểm nóng công dân (Civic Hotspot Intelligence)' : 'Civic Hotspot Intelligence'}
+                      </p>
+                      <p className="text-gray-300 font-body mt-0.5">
+                        {lang === 'vi'
+                          ? `Thuật toán đã tự động uốn cong lộ trình để né tránh ${result.civicAvoided.length} điểm ô nhiễm cục bộ (mức độ tin cậy cao${result.sensitiveProfile ? ' và trung bình gần đây' : ''}).`
+                          : `Route dynamically rerouted away from ${result.civicAvoided.length} confirmed pollution hotspots.`}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {result.civicAvoided.slice(0, 4).map((ev) => (
+                        <div key={ev.id} className="px-2.5 py-1 rounded-lg bg-black/40 border border-amber-500/20 text-[11px] text-gray-200">
+                          <span className="font-heading font-semibold text-amber-300 capitalize">{ev.eventType.replace(/_/g, ' ')}</span>
+                          <span className="text-gray-400"> · {ev.sourceLabel} · tin cậy {ev.confidence}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {result.sensitiveProfile && (
+                      <p className="text-[11px] text-amber-400/80 italic font-body">
+                        {lang === 'vi'
+                          ? '✦ Đã kích hoạt cơ chế bảo vệ nghiêm ngặt dựa trên hồ sơ sức khoẻ hô hấp của bạn.'
+                          : '✦ Enhanced avoidance threshold active based on your respiratory health profile.'}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Community Danger Zones Box */}
+              {result && result.dangerZones.length > 0 && (
+                <div className="rounded-3xl p-5 bg-gradient-to-br from-rose-500/10 via-[#0D1D35]/85 to-[#08101E]/95 border border-rose-500/30 shadow-xl backdrop-blur-xl flex items-start gap-3.5">
+                  <div className="p-2 rounded-xl bg-rose-500/20 text-rose-400 shrink-0 mt-0.5">
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0 text-xs">
+                    <p className="font-heading font-bold text-rose-300 text-sm">
+                      {lang === 'vi' ? 'Cảnh báo từ báo cáo cộng đồng' : 'Community Alerts Avoided'}
+                    </p>
+                    <p className="text-gray-300 font-body mt-0.5">
+                      {lang === 'vi'
+                        ? `Tuyến đường đã né tránh ${result.dangerZones.length} cụm cảnh báo khói bụi / công trường do cộng đồng ghi nhận trong 30 phút qua.`
+                        : `Clean route actively diverts around ${result.dangerZones.length} verified real-time community danger zones.`}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Calculation Transparency Panel */}
+              {result && (
+                <div className="rounded-3xl bg-gradient-to-br from-[#0B1528]/90 via-[#0D1D35]/85 to-[#08101E]/95 border border-sky-500/20 shadow-2xl backdrop-blur-xl p-5 overflow-hidden">
+                  <CalculationDetailsPanel
                     lang={lang}
-                    origin={{ lat: fromCoords[1], lng: fromCoords[0], label: fromQuery }}
-                    destination={{ lat: toCoords[1], lng: toCoords[0], label: toQuery }}
+                    samplePoints={result.recommended.segments.length}
+                    confidence={demo ? 'demo' : (result.recommended.segments.length >= 3 ? 'estimated' : 'unavailable')}
+                    sources={[
+                      { name: 'Mapbox Directions API', status: 'live', detail: lang === 'vi' ? 'tuyến + congestion' : 'route + congestion', observedAt: Date.now() },
+                      { name: 'Open-Meteo PM2.5', status: demo ? 'demo' : 'estimated', detail: lang === 'vi' ? 'lấy mẫu mỗi đoạn' : 'midpoint sample / segment' },
+                      { name: 'WAQI stations', status: 'live', detail: lang === 'vi' ? 'fusion với hotspot' : 'fused into hotspots' },
+                      { name: lang === 'vi' ? 'Báo cáo cộng đồng' : 'Community reports', status: result.dangerZones.length > 0 ? 'live' : 'placeholder', detail: `${result.dangerZones.length} ${lang === 'vi' ? 'cụm cảnh báo' : 'clusters'}` },
+                      { name: 'Civic Hotspot Intelligence', status: result.civicAvoided.length > 0 ? 'live' : 'placeholder', detail: `${result.civicAvoided.length} ${lang === 'vi' ? 'điểm né' : 'avoided'}` },
+                    ]}
+                    formulas={[
+                      { label: lang === 'vi' ? 'PM2.5 hiệu dụng / đoạn' : 'Effective PM2.5 / segment',
+                        expr: 'eff = raw · park(0.7|1) · road(1.5|1) · congestion(1..1.5) · vehicle + dangerPenalty',
+                        note: lang === 'vi' ? 'Áp dụng cho mỗi midpoint của đoạn tuyến.' : 'Applied at each segment midpoint.' },
+                      { label: lang === 'vi' ? 'PM2.5 trung bình tuyến' : 'Route average PM2.5',
+                        expr: 'avg = Σ(pm25_i) / N_segments' },
+                      { label: lang === 'vi' ? 'Phơi nhiễm' : 'Exposure',
+                        expr: 'exposure = avgPm25 · duration(min)',
+                        note: lang === 'vi' ? 'µg·min — proxy phơi nhiễm.' : 'µg·min exposure proxy.' },
+                      { label: lang === 'vi' ? 'Chi phí tuyến' : 'Route cost',
+                        expr: `cost = α·T + β·(E/10)   ·   α=${result.weights.alpha.toFixed(2)}, β=${result.weights.beta.toFixed(2)}`,
+                        note: lang === 'vi' ? 'Tuyến có cost thấp nhất = khuyên dùng.' : 'Lowest cost = recommended.' },
+                      { label: lang === 'vi' ? 'Hotspot né' : 'Hotspots avoided',
+                        expr: 'high confidence ∪ (sensitiveProfile ∧ medium ≤ 60min)',
+                        note: lang === 'vi'
+                          ? `Hồ sơ nhạy cảm: ${result.sensitiveProfile ? 'CÓ' : 'KHÔNG'}.`
+                          : `Sensitive profile: ${result.sensitiveProfile ? 'YES' : 'NO'}.` },
+                    ]}
                   />
-                )}
+                </div>
+              )}
+            </div>
 
-                <CalculationDetailsPanel
-                  lang={lang}
-                  samplePoints={result.recommended.segments.length}
-                  confidence={USE_DEMO_DATA ? 'demo' : (result.recommended.segments.length >= 3 ? 'estimated' : 'unavailable')}
-                  sources={[
-                    { name: 'Mapbox Directions API', status: 'live', detail: lang === 'vi' ? 'tuyến + congestion' : 'route + congestion', observedAt: Date.now() },
-                    { name: 'Open-Meteo PM2.5', status: USE_DEMO_DATA ? 'demo' : 'estimated', detail: lang === 'vi' ? 'lấy mẫu mỗi đoạn' : 'midpoint sample / segment' },
-                    { name: 'WAQI stations', status: 'live', detail: lang === 'vi' ? 'fusion với hotspot' : 'fused into hotspots' },
-                    { name: lang === 'vi' ? 'Báo cáo cộng đồng' : 'Community reports', status: result.dangerZones.length > 0 ? 'live' : 'placeholder', detail: `${result.dangerZones.length} ${lang === 'vi' ? 'cụm cảnh báo' : 'clusters'}` },
-                    { name: 'Civic Hotspot Intelligence', status: result.civicAvoided.length > 0 ? 'live' : 'placeholder', detail: `${result.civicAvoided.length} ${lang === 'vi' ? 'điểm né' : 'avoided'}` },
-                  ]}
-                  formulas={[
-                    { label: lang === 'vi' ? 'PM2.5 hiệu dụng / đoạn' : 'Effective PM2.5 / segment',
-                      expr: 'eff = raw · park(0.7|1) · road(1.5|1) · congestion(1..1.5) · vehicle + dangerPenalty',
-                      note: lang === 'vi' ? 'Áp dụng cho mỗi midpoint của đoạn tuyến.' : 'Applied at each segment midpoint.' },
-                    { label: lang === 'vi' ? 'PM2.5 trung bình tuyến' : 'Route average PM2.5',
-                      expr: 'avg = Σ(pm25_i) / N_segments' },
-                    { label: lang === 'vi' ? 'Phơi nhiễm' : 'Exposure',
-                      expr: 'exposure = avgPm25 · duration(min)',
-                      note: lang === 'vi' ? 'µg·min — proxy phơi nhiễm.' : 'µg·min exposure proxy.' },
-                    { label: lang === 'vi' ? 'Chi phí tuyến' : 'Route cost',
-                      expr: `cost = α·T + β·(E/10)   ·   α=${result.weights.alpha.toFixed(2)}, β=${result.weights.beta.toFixed(2)}`,
-                      note: lang === 'vi' ? 'Tuyến có cost thấp nhất = khuyên dùng.' : 'Lowest cost = recommended.' },
-                    { label: lang === 'vi' ? 'Hotspot né' : 'Hotspots avoided',
-                      expr: 'high confidence ∪ (sensitiveProfile ∧ medium ≤ 60min)',
-                      note: lang === 'vi'
-                        ? `Hồ sơ nhạy cảm: ${result.sensitiveProfile ? 'CÓ' : 'KHÔNG'}.`
-                        : `Sensitive profile: ${result.sensitiveProfile ? 'YES' : 'NO'}.` },
-                  ]}
-                />
-              </motion.div>
-            )}
           </div>
         </PremiumGate>
-        </div>
-      </FeatureExperienceLayout>
+      </div>
     </div>
   );
 };
 
-function Stat({ label, value, sub, highlight }: { label: string; value: string; sub?: string; highlight?: boolean }) {
+function Stat({
+  label,
+  value,
+  sub,
+  highlight,
+  variant,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  highlight?: boolean;
+  variant?: 'emerald' | 'amber' | 'cyan' | 'default';
+}) {
+  const valueColor =
+    variant === 'emerald' || highlight
+      ? 'text-emerald-400'
+      : variant === 'amber'
+      ? 'text-amber-400'
+      : variant === 'cyan'
+      ? 'text-cyan-400'
+      : 'text-white';
+
   return (
-    <div className="text-center min-w-0">
-      <p className="text-[10px] text-muted-foreground font-heading uppercase tracking-wider mb-0.5 truncate">{label}</p>
-      <p className={`font-heading text-sm font-bold truncate ${highlight ? 'text-green-600' : 'text-foreground'}`}>{value}</p>
-      {sub && <p className="text-[10px] font-body text-orange-500 mt-0.5">{sub}</p>}
+    <div className="text-center min-w-0 p-2.5 rounded-xl bg-white/[0.03] border border-white/5 backdrop-blur-sm">
+      <p className="text-[10px] text-gray-400 font-heading uppercase tracking-wider mb-0.5 truncate">{label}</p>
+      <p className={`font-heading text-sm sm:text-base font-bold whitespace-nowrap ${valueColor}`}>{value}</p>
+      {sub && <p className="text-[10px] font-body text-amber-400/90 mt-0.5 font-medium">{sub}</p>}
     </div>
   );
 }

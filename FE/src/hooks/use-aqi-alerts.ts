@@ -4,6 +4,8 @@ import { useAuth } from '@/hooks/use-auth';
 import { preferencesApi, notificationsApi } from '@/integrations/api';
 import { WeatherData } from '@/hooks/use-weather-data';
 import { GeoLocation } from '@/hooks/use-geolocation';
+import { hasAirQualityReading } from '@/lib/air-quality';
+import { useAppLang } from '@/hooks/use-app-lang';
 
 export type SensitiveGroup = 'none' | 'child' | 'elderly' | 'respiratory' | 'pregnant';
 
@@ -49,10 +51,13 @@ const COOLDOWN_MS = 2 * 60 * 60 * 1000; // 2h
  */
 export function useAQIAlerts(weather: WeatherData, location?: GeoLocation | null) {
   const { user } = useAuth();
+  const lang = useAppLang();
   const prefsRef = useRef<AlertPreferences | null>(null);
   const loadedRef = useRef(false);
 
   useEffect(() => {
+    prefsRef.current = null;
+    loadedRef.current = false;
     if (!user) return;
     let cancelled = false;
     (async () => {
@@ -62,13 +67,13 @@ export function useAQIAlerts(weather: WeatherData, location?: GeoLocation | null
       loadedRef.current = true;
     })();
     return () => { cancelled = true; };
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => {
     if (!user || !loadedRef.current) return;
     const prefs = prefsRef.current;
     if (!prefs || !prefs.notify_enabled) return;
-    if (weather.loading || weather.error || weather.aqi <= 0) return;
+    if (!hasAirQualityReading(weather)) return;
     if (!location || (location.status !== 'active' && location.status !== 'manual')) return;
     if (weather.aqi < prefs.alert_threshold) return;
     if (isInQuietHours(prefs.quiet_hours_start, prefs.quiet_hours_end)) return;
@@ -82,11 +87,13 @@ export function useAQIAlerts(weather: WeatherData, location?: GeoLocation | null
     if (!cooledDown && !escalated) return;
 
     const subject = SENSITIVE_LABEL_VI[prefs.sensitive_group];
-    const where = location.label || 'vị trí hiện tại của bạn';
-    const title = `⚠️ AQI ${weather.aqi} tại ${where}`;
-    const message = prefs.sensitive_group === 'none'
-      ? `Chất lượng không khí vượt ngưỡng ${prefs.alert_threshold}. Hạn chế hoạt động ngoài trời.`
-      : `Mức nhạy cảm: ${subject}. AQI hiện tại ${weather.aqi} vượt ngưỡng ${prefs.alert_threshold}. Khuyến nghị ở trong nhà, đeo khẩu trang N95 nếu phải ra ngoài.`;
+    const where = location.label || (lang === 'vi' ? 'vị trí hiện tại' : 'your current location');
+    const title = lang === 'vi' ? `⚠️ AQI ${weather.aqi} tại ${where}` : `⚠️ AQI ${weather.aqi} at ${where}`;
+    const message = lang === 'vi'
+      ? prefs.sensitive_group === 'none'
+        ? `Chất lượng không khí vượt ngưỡng ${prefs.alert_threshold}. Hạn chế hoạt động ngoài trời.`
+        : `Nhóm nhạy cảm: ${subject}. AQI ${weather.aqi} vượt ngưỡng ${prefs.alert_threshold}. Cân nhắc hạn chế hoạt động ngoài trời.`
+      : `Air quality exceeded your AQI threshold of ${prefs.alert_threshold}. Consider reducing outdoor activity, especially if you are sensitive to air pollution.`;
 
     // In-app toast
     toast.warning(title, { description: message, duration: 8000 });
@@ -108,5 +115,5 @@ export function useAQIAlerts(weather: WeatherData, location?: GeoLocation | null
       last_alert_aqi: weather.aqi,
       last_alert_at: new Date().toISOString(),
     };
-  }, [user, weather.aqi, weather.loading, weather.error, location]);
+  }, [user, weather.aqi, weather.loading, weather.error, weather.updatedAt, location, lang]);
 }

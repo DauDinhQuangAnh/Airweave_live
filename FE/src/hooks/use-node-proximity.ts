@@ -32,7 +32,8 @@ export function useNodeProximity(userLat: number, userLng: number): ProximityRes
       const data = await nodesApi.listNodes();
       setNodes(data || []);
     } catch {
-      // Fallback silent
+      // Do not keep presenting an old node snapshot as a live connection.
+      setNodes([]);
     }
   };
 
@@ -43,7 +44,7 @@ export function useNodeProximity(userLat: number, userLng: number): ProximityRes
   }, []);
 
   const closestCalc = useMemo(() => {
-    if (!userLat || !userLng || nodes.length === 0) {
+    if (!Number.isFinite(userLat) || !Number.isFinite(userLng) || nodes.length === 0) {
       return { node: null, distance: null };
     }
 
@@ -51,7 +52,7 @@ export function useNodeProximity(userLat: number, userLng: number): ProximityRes
     let closestNode: any = null;
 
     nodes.forEach((n) => {
-      if (n.lat && n.lng && n.status !== 'offline') {
+      if (Number.isFinite(n.lat) && Number.isFinite(n.lng) && n.status === 'online' && Number.isFinite(n.aqi)) {
         const d = calculateDistanceMeters(userLat, userLng, n.lat, n.lng);
         if (d < minDistance) {
           minDistance = d;
@@ -63,37 +64,28 @@ export function useNodeProximity(userLat: number, userLng: number): ProximityRes
     return { node: closestNode, distance: minDistance };
   }, [userLat, userLng, nodes]);
 
-  // Hysteresis Logic to prevent flickering
+  const activeNode = useMemo(() => nodes.find((n) =>
+    n.id === activeMatchedNodeId && n.status === 'online' && Number.isFinite(n.aqi) && Number.isFinite(n.lat) && Number.isFinite(n.lng)
+  ) ?? null, [activeMatchedNodeId, nodes]);
+  const activeDistance = activeNode && Number.isFinite(userLat) && Number.isFinite(userLng)
+    ? calculateDistanceMeters(userLat, userLng, activeNode.lat, activeNode.lng) : null;
+
+  // Hysteresis only applies to the same healthy node; never retain an offline node.
   useEffect(() => {
     const { node, distance } = closestCalc;
-
-    if (!node || distance === null) {
+    if (activeMatchedNodeId && (!activeNode || activeDistance === null || activeDistance > DISCONNECT_THRESHOLD_METERS)) {
       setActiveMatchedNodeId(null);
       return;
     }
-
-    if (activeMatchedNodeId) {
-      // Đang kết nối -> chỉ ngắt khi đi xa > 650m
-      if (distance > DISCONNECT_THRESHOLD_METERS) {
-        setActiveMatchedNodeId(null);
-      }
-    } else {
-      // Chưa kết nối -> kích hoạt khi đi vào < 500m
-      if (distance <= CONNECT_THRESHOLD_METERS) {
-        setActiveMatchedNodeId(node.id);
-      }
+    if (!activeMatchedNodeId && node && distance !== null && distance <= CONNECT_THRESHOLD_METERS) {
+      setActiveMatchedNodeId(node.id);
     }
-  }, [closestCalc, activeMatchedNodeId]);
-
-  const matchedNode = useMemo(() => {
-    if (!activeMatchedNodeId) return null;
-    return nodes.find((n) => n.id === activeMatchedNodeId) || closestCalc.node;
-  }, [activeMatchedNodeId, nodes, closestCalc.node]);
+  }, [closestCalc, activeMatchedNodeId, activeNode, activeDistance]);
 
   return {
-    matchedNode: activeMatchedNodeId ? matchedNode : null,
-    distanceMeters: activeMatchedNodeId ? closestCalc.distance : null,
-    isConnectedToNode: !!activeMatchedNodeId,
+    matchedNode: activeNode,
+    distanceMeters: activeDistance,
+    isConnectedToNode: !!activeNode && activeDistance !== null && activeDistance <= DISCONNECT_THRESHOLD_METERS,
     refetchNodes: fetchNodes,
   };
 }

@@ -10,7 +10,6 @@
  */
 
 import { getConsent } from './privacy-consent';
-import { isLightweightPrivacy } from './app-mode';
 
 export type BehaviorEvent =
   | 'health_profile_completed'
@@ -55,10 +54,7 @@ function write(s: Store) {
 }
 
 export function trackBehavior(event: BehaviorEvent) {
-  // Prototype/lightweight: local-only aggregate counts (no server, no PII) are
-  // allowed without a separate consent screen. Server uploads still require
-  // explicit consent via the full Privacy & Consent card in Profile.
-  if (!isLightweightPrivacy() && getConsent('behavior_tracking') !== 'granted') return;
+  if (getConsent('behavior_tracking') !== 'granted') return;
   const s = read();
   const prev = s.events[event] ?? { count: 0, last_at: null };
   s.events[event] = { count: prev.count + 1, last_at: new Date().toISOString() };

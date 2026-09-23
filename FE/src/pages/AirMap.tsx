@@ -1,507 +1,735 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useOutletContext, useSearchParams } from 'react-router-dom';
-import { Wind, LocateFixed, MapPin, Shield, Bell } from 'lucide-react';
-import FeatureExperienceLayout from '@/components/feature-experience/FeatureExperienceLayout';
-import { useLiveAirContext } from '@/contexts/live-air-context';
-import { useWindyKey } from '@/hooks/use-windy-key';
-import { useWindyMap } from '@/hooks/use-windy-map';
-import WindBoomerangLoader from '@/components/WindBoomerangLoader';
-import MapOverlayControls, { MapLayerKey } from '@/components/map/MapOverlayControls';
-import MapLocationBar from '@/components/map/MapLocationBar';
-import CommunityReportFAB, { COMMUNITY_REPORT_KINDS } from '@/components/map/CommunityReportFAB';
-import ShareMapButton from '@/components/map/ShareMapButton';
-import MapSearchBar from '@/components/map/MapSearchBar';
-import { getAqiCircleColor } from '@/components/map/map-data';
-import MicroAirLayer from '@/components/map/MicroAirLayer';
-import CivicHotspotLayer from '@/components/map/CivicHotspotLayer';
-import { hotspotIntelligenceService } from '@/lib/civic-hotspot';
-import { airApi, communityApi, nodesApi } from '@/integrations/api';
-
-import { useCommunityRealtime } from '@/hooks/use-community-realtime';
-import DataStatusChip from '@/components/feature-experience/DataStatusChip';
-import NodeProximityBadge from '@/components/NodeProximityBadge';
-
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
 import {
-  buildWaqiCluster,
-  getWaqiClusters,
-  buildReportCluster,
-  getReportClusters,
-  renderWaqiMarkerHtml,
-  getReportClusterPopupHtml,
-} from '@/lib/map-cluster';
+  Radio,
+  Cpu,
+  Users,
+  Flame,
+  Wind,
+  Sparkles,
+  MapPin,
+  Search,
+  Crosshair,
+  Compass,
+  ShieldCheck,
+  ArrowLeft,
+  Home,
+  Route as RouteIcon,
+  Info,
+  CheckCircle2,
+  Activity,
+  Thermometer,
+  Droplets,
+  Eye,
+  AlertTriangle,
+  Layers,
+  Maximize2,
+  Minimize2,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { toast } from 'sonner';
+import { useWaqiStations } from '@/hooks/use-waqi-stations';
+import { useLiveAirContext } from '@/contexts/live-air-context';
+import { communityApi, nodesApi } from '@/integrations/api';
+import { useCommunityRealtime } from '@/hooks/use-community-realtime';
+import {
+  hotspotIntelligenceService,
+  getDemoHotspots,
+  type HotspotEvent,
+} from '@/lib/civic-hotspot';
+import { shouldUseDemoData } from '@/lib/app-mode';
+import AuroraBackground from '@/components/AuroraBackground';
+import DataStatusChip from '@/components/feature-experience/DataStatusChip';
+import MapSearchBar from '@/components/map/MapSearchBar';
+import AQIInteractiveMap, { MapLayersState } from '@/components/map/AQIInteractiveMap';
+import { PAMStation, getAQIColorNew } from '@/lib/pam-stations';
+import { getAQIStatus, hasAirQualityReading } from '@/lib/air-quality';
+import { hasWeatherMetric } from '@/hooks/use-weather-data';
+import { localizeDemoText } from '@/lib/localize-demo';
 
-declare global {
-  interface Window {
-    windyInit: (options: any, callback: (api: any) => void) => void;
-    L: any;
+// Haversine distance formula in km
+function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function formatDistance(km: number, lang: 'vi' | 'en'): string {
+  if (km < 1) {
+    const meters = Math.round(km * 1000);
+    return lang === 'vi' ? `Cách ~${meters}m` : `~${meters}m away`;
   }
+  return lang === 'vi' ? `Cách ~${km.toFixed(1)}km` : `~${km.toFixed(1)}km away`;
 }
 
-interface CommunityReport {
-  id: string;
-  lat: number;
-  lng: number;
-  kind: string;
-  text: string | null;
-  created_at: string;
-}
-
-interface WaqiStation {
-  uid: number;
-  lat: number;
-  lng: number;
-  aqi: number;
-  station: string | null;
-  time?: string | { s?: string; iso?: string } | null;
-}
-
-const KIND_LABEL: Record<string, { vi: string; en: string; icon: string }> = Object.fromEntries(
-  COMMUNITY_REPORT_KINDS.map(k => [k.value, { vi: k.vi, en: k.en, icon: k.icon }])
-);
-
-function timeAgo(iso: string, lang: 'vi' | 'en') {
-  const diff = Math.max(0, Date.now() - new Date(iso).getTime());
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return lang === 'vi' ? 'vừa xong' : 'just now';
-  if (m < 60) return lang === 'vi' ? `${m} phút trước` : `${m}m ago`;
-  const h = Math.floor(m / 60);
-  return lang === 'vi' ? `${h} giờ trước` : `${h}h ago`;
+function getAqiRecommendation(aqi: number, lang: 'vi' | 'en'): { title: string; desc: string; badge: string; color: string } {
+  if (aqi <= 50) {
+    return {
+      title: lang === 'vi' ? 'Không khí trong lành' : 'Good Air Quality',
+      desc: lang === 'vi' ? 'Lý tưởng cho mọi hoạt động thể thao ngoài trời và thông khí tự nhiên.' : 'Ideal for outdoor sports and natural ventilation.',
+      badge: lang === 'vi' ? 'An toàn' : 'Good',
+      color: 'text-emerald-400 border-emerald-500/40 bg-emerald-500/15',
+    };
+  }
+  if (aqi <= 100) {
+    return {
+      title: lang === 'vi' ? 'Chất lượng trung bình' : 'Moderate Quality',
+      desc: lang === 'vi' ? 'Người có bệnh hô hấp nhạy cảm nên hạn chế vận động gắng sức ngoài trời.' : 'Sensitive individuals should limit prolonged exertion.',
+      badge: lang === 'vi' ? 'Trung bình' : 'Moderate',
+      color: 'text-yellow-400 border-yellow-500/40 bg-yellow-500/15',
+    };
+  }
+  if (aqi <= 150) {
+    return {
+      title: lang === 'vi' ? 'Kém cho nhóm nhạy cảm' : 'Unhealthy for Sensitive',
+      desc: lang === 'vi' ? 'Nên đeo khẩu trang N95 khi di chuyển. Đóng bớt cửa sổ khi gần trục đường lớn.' : 'Wear N95 mask. Keep windows closed near busy roads.',
+      badge: lang === 'vi' ? 'Kém' : 'Sensitive',
+      color: 'text-orange-400 border-orange-500/40 bg-orange-500/15',
+    };
+  }
+  if (aqi <= 200) {
+    return {
+      title: lang === 'vi' ? 'Chất lượng không khí xấu' : 'Unhealthy',
+      desc: lang === 'vi' ? 'Hạn chế tối đa ra ngoài. Bật máy lọc không khí và kích hoạt Smart Route để né vùng ô nhiễm.' : 'Avoid outdoor activities. Run air purifier and use Smart Route.',
+      badge: lang === 'vi' ? 'Xấu' : 'Unhealthy',
+      color: 'text-red-400 border-red-500/40 bg-red-500/15',
+    };
+  }
+  return {
+    title: lang === 'vi' ? 'Rất nguy hại sức khỏe' : 'Very Unhealthy / Hazardous',
+    desc: lang === 'vi' ? 'Cảnh báo khẩn cấp: Nguy cơ kích phát cơn hen và viêm phổi cấp. Tránh ra ngoài tuyệt đối.' : 'Emergency warning: High respiratory risk. Stay indoors.',
+    badge: lang === 'vi' ? 'Nguy hại' : 'Hazardous',
+    color: 'text-purple-400 border-purple-500/40 bg-purple-500/15',
+  };
 }
 
 const AirMap = () => {
-  const { lang } = useOutletContext<{ lang: 'vi' | 'en' }>();
-  const { location, proximityNode, proximityDistance } = useLiveAirContext();
+  const demo = shouldUseDemoData();
+  const navigate = useNavigate();
+  const outletCtx = useOutletContext<{ lang?: 'vi' | 'en' }>() || {};
+  const lang = outletCtx.lang || 'vi';
+  const [searchParams] = useSearchParams();
 
-  const [searchParams, setSearchParams] = useSearchParams();
-  const autoOpenReport = searchParams.get('report') === '1';
-  useEffect(() => {
-    if (autoOpenReport) {
-      const t = setTimeout(() => {
-        searchParams.delete('report');
-        setSearchParams(searchParams, { replace: true });
-      }, 500);
-      return () => clearTimeout(t);
-    }
-  }, [autoOpenReport, searchParams, setSearchParams]);
-  const { key: windyKey, loading: keyLoading, error: keyError } = useWindyKey();
+  const { location, weather } = useLiveAirContext();
+  const hasKnownLocation = location.status === 'active' || location.status === 'manual';
+  const { stations: rawStations, loading: stationsLoading } = useWaqiStations();
 
-  const [layers, setLayers] = useState({ community: true, micro: true, civic: true });
-  const [searchPin, setSearchPin] = useState<{ lat: number; lng: number; label: string } | null>(null);
-  const [reports, setReports] = useState<CommunityReport[]>([]);
-  const [stations, setStations] = useState<WaqiStation[]>([]);
   const [iotNodes, setIotNodes] = useState<any[]>([]);
-  const [mapZoom, setMapZoom] = useState(12);
+  const [communityReports, setCommunityReports] = useState<any[]>([]);
+  const [selectedStationId, setSelectedStationId] = useState<string | null>(null);
+  const [searchPin, setSearchPin] = useState<{ lat: number; lng: number; label: string } | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'waqi' | 'iot' | 'community'>('waqi');
 
+  const [layers, setLayers] = useState<MapLayersState>({
+    waqi: true,
+    iot: true,
+    community: true,
+    hotspots: true,
+  });
 
-  const mapContainerRef = useRef<HTMLDivElement>(null);
-  const overlayMarkersRef = useRef<any[]>([]);
-  const lastFetchRef = useRef<number>(0);
+  const toggleLayer = (key: keyof MapLayersState) => {
+    setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
-  const { mapReady, activeOverlay, setActiveOverlay, leafletMap, panTo } = useWindyMap(
-    mapContainerRef,
-    { windyKey, lat: location.lat, lng: location.lng, lang }
-  );
+  // User coordinates
+  const userCoords = useMemo(() => {
+    return {
+      lat: hasKnownLocation ? location.lat : 21.0285,
+      lng: hasKnownLocation ? location.lng : 105.8542,
+      label: localizeDemoText(location.label, lang) || (lang === 'vi' ? 'Vị trí của bạn' : 'Your Location'),
+    };
+  }, [location.lat, location.lng, location.label, lang, hasKnownLocation]);
 
-  // ---- Realtime community reports & IoT Nodes ----
+  // Load IoT Nodes & Community Reports
   useEffect(() => {
     let active = true;
     const load = async () => {
-      const [rData, nData] = await Promise.all([
-        communityApi.listActive(undefined, 200).catch(() => []),
-        nodesApi.listNodes().catch(() => []),
-      ]);
-      if (active) {
-        setReports(rData as CommunityReport[]);
-        setIotNodes(nData as any[]);
+      try {
+        const [rData, nData] = await Promise.all([
+          communityApi.listActive(undefined, 200).catch(() => []),
+          nodesApi.listNodes().catch(() => []),
+        ]);
+        if (active) {
+          setCommunityReports(Array.isArray(rData) ? rData : []);
+          setIotNodes(Array.isArray(nData) ? nData : []);
+        }
+      } catch (err) {
+        console.warn('Failed to load map overlays:', err);
       }
     };
     load();
-
     return () => {
       active = false;
     };
   }, []);
 
-
+  // Realtime updates for community reports
   useCommunityRealtime({
-    onNew: (r) =>
-      setReports((prev) => [r, ...prev.filter((x) => x.id !== r.id)].slice(0, 200) as CommunityReport[]),
-    onDeleted: (id) => setReports((prev) => prev.filter((x) => x.id !== id)),
+    onNew: (r) => setCommunityReports((prev) => [r, ...prev.filter((x) => x.id !== r.id)].slice(0, 200)),
+    onDeleted: (id) => setCommunityReports((prev) => prev.filter((x) => x.id !== id)),
   });
 
-  // ---- WAQI stations on viewport (debounced) ----
-  const fetchStations = useCallback(async () => {
-    if (!leafletMap) return;
-    const now = Date.now();
-    if (now - lastFetchRef.current < 8000) return;
-    lastFetchRef.current = now;
-    try {
-      const b = leafletMap.getBounds();
-      const data = await airApi.waqiBounds(b.getSouth(), b.getWest(), b.getNorth(), b.getEast());
-      if (data?.stations) setStations(data.stations);
-    } catch (e) {
-      console.warn('WAQI stations fetch failed', e);
-    }
-  }, [leafletMap]);
-
-  useEffect(() => {
-    if (!mapReady || !leafletMap) return;
-    fetchStations();
-    setMapZoom(leafletMap.getZoom());
-
-    const onMoveEnd = () => fetchStations();
-    const onZoomEnd = () => setMapZoom(leafletMap.getZoom());
-
-    leafletMap.on('moveend', onMoveEnd);
-    leafletMap.on('zoomend', onZoomEnd);
-    return () => {
-      leafletMap.off('moveend', onMoveEnd);
-      leafletMap.off('zoomend', onZoomEnd);
-    };
-  }, [mapReady, leafletMap, fetchStations]);
-
-  // ---- Render overlays với clustering ----
-  useEffect(() => {
-    if (!mapReady || !leafletMap || !window.L) return;
-    const L = window.L;
-    const map = leafletMap;
-
-    // Xoá markers cũ
-    overlayMarkersRef.current.forEach((marker) => {
-      try { map.removeLayer(marker); } catch { /* noop */ }
-    });
-    overlayMarkersRef.current = [];
-
-    // --- Search pin ---
-    if (searchPin) {
-      const pinIcon = L.divIcon({
-        className: 'search-pin-marker',
-        html: `<div style="background:hsl(var(--primary));color:#fff;font-weight:700;font-size:11px;padding:3px 8px;border-radius:12px;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4);font-family:sans-serif;white-space:nowrap;">📍 ${searchPin.label.split(',')[0]}</div>`,
-        iconSize: [0, 0],
-        iconAnchor: [0, 0],
-      });
-      const m = L.marker([searchPin.lat, searchPin.lng], { icon: pinIcon }).addTo(map);
-      overlayMarkersRef.current.push(m);
-    }
-
-    // --- WAQI Stations với clustering ---
-    if (stations.length > 0) {
-      const b = map.getBounds();
-      const bounds = { west: b.getWest(), south: b.getSouth(), east: b.getEast(), north: b.getNorth() };
-      const waqiSC = buildWaqiCluster(stations);
-      const waqiPoints = getWaqiClusters(waqiSC, bounds, mapZoom, stations);
-
-      waqiPoints.forEach((point) => {
-        if (point.type === 'cluster') {
-          const { html, size, anchor } = renderWaqiMarkerHtml(point);
-          const icon = L.divIcon({ className: 'waqi-cluster-marker', html, iconSize: size, iconAnchor: anchor });
-          const m = L.marker([point.lat, point.lng], { icon }).addTo(map);
-          // Click cluster → zoom vào
-          m.on('click', () => {
-            const targetZoom = Math.min(point.expansion_zoom, map.getMaxZoom());
-            map.flyTo([point.lat, point.lng], targetZoom, { duration: 0.5 });
-          });
-          overlayMarkersRef.current.push(m);
-        } else if (point.type === 'waqi') {
-          const { html, size, anchor } = renderWaqiMarkerHtml(point);
-          const icon = L.divIcon({ className: 'waqi-station-marker', html, iconSize: size, iconAnchor: anchor });
-          const marker = L.marker([point.lat, point.lng], { icon }).addTo(map);
-          marker.bindPopup(
-            `<div style="font-family:sans-serif"><b>${point.station.station ?? 'WAQI Station'}</b><br>AQI: <b>${point.station.aqi}</b><br><small>${lang === 'vi' ? 'Trạm WAQI · đo thật' : 'WAQI station · measured'}</small></div>`
-          );
-          overlayMarkersRef.current.push(marker);
-        }
-      });
-    }
-
-    // --- Community Reports với clustering ---
-    if (layers.community && reports.length > 0) {
-      const b = map.getBounds();
-      const bounds = { west: b.getWest(), south: b.getSouth(), east: b.getEast(), north: b.getNorth() };
-      const reportSC = buildReportCluster(reports);
-      const reportPoints = getReportClusters(reportSC, bounds, mapZoom, reports);
-
-      reportPoints.forEach((point) => {
-        if (point.type === 'cluster') {
-          const icon = L.divIcon({
-            className: 'report-cluster-marker',
-            html: `<div style="background:#FF6B6B;width:34px;height:34px;border-radius:50%;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-family:sans-serif;font-weight:800;font-size:12px;color:#fff;cursor:pointer">${point.count}</div>`,
-            iconSize: [34, 34],
-            iconAnchor: [17, 17],
-          });
-          const m = L.marker([point.lat, point.lng], { icon }).addTo(map);
-          m.bindPopup(getReportClusterPopupHtml(point.count, lang));
-          m.on('click', () => {
-            const targetZoom = Math.min(point.expansion_zoom, map.getMaxZoom());
-            map.flyTo([point.lat, point.lng], targetZoom, { duration: 0.5 });
-          });
-          overlayMarkersRef.current.push(m);
-        } else if (point.type === 'report') {
-          const meta = KIND_LABEL[point.report.kind] ?? KIND_LABEL.other;
-          const label = point.report.text ?? (lang === 'vi' ? meta.vi : meta.en);
-          const circle = L.circle([point.lat, point.lng], {
-            radius: 400, color: '#FF6B6B', fillColor: '#FF6B6B', fillOpacity: 0.35, weight: 1, dashArray: '4 4',
-          }).addTo(map);
-          circle.bindPopup(
-            `<div style="font-family:sans-serif"><b>${meta.icon} ${label}</b><br><small>${timeAgo(point.report.created_at, lang)}</small></div>`
-          );
-          overlayMarkersRef.current.push(circle);
-        }
-      });
-    }
-
-    // --- Physical IoT Nodes với hiệu ứng glowing ring ---
-    if (iotNodes.length > 0) {
-      iotNodes.forEach((node) => {
-        const isSolar = node.power_source === 'solar' || node.edition === 'outdoor_solar';
-        const color = getAqiCircleColor(node.aqi);
-        const icon = L.divIcon({
-          className: 'iot-physical-node-marker',
-          html: `<div style="
-            position:relative;
-            background:linear-gradient(135deg, #06b6d4, #3b82f6);
-            padding:3px 8px;
-            border-radius:14px;
-            border:2px solid #fff;
-            box-shadow:0 0 12px rgba(6,182,212,0.8), 0 2px 6px rgba(0,0,0,0.5);
-            font-family:sans-serif;
-            display:flex;align-items:center;gap:4px;
-            color:#fff;font-weight:800;font-size:11px;
-            cursor:pointer;
-          ">
-            <span>⚡ ${node.aqi}</span>
-            <span style="font-size:9px;opacity:0.9;font-weight:600">AQI</span>
-          </div>`,
-          iconSize: [60, 24],
-          iconAnchor: [30, 12],
-        });
-
-        const m = L.marker([node.lat, node.lng], { icon }).addTo(map);
-        m.bindPopup(`
-          <div style="font-family:sans-serif;padding:2px">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-              <span style="background:#06b6d4;color:#fff;font-weight:800;font-size:10px;padding:2px 6px;border-radius:4px">⚡ NODE AIRWEAVE</span>
-              <b style="font-size:13px">${node.name}</b>
-            </div>
-            <div style="font-size:11px;color:#444">Khu vực: <b>${node.organization_name || node.location_name || 'Vi vùng tại chỗ'}</b></div>
-            <hr style="margin:6px 0;border:none;border-top:1px solid #eee">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px">
-              <div>Chỉ số AQI: <b style="color:#06b6d4">${node.aqi}</b></div>
-              <div>Bụi PM2.5: <b>${node.pm25} µg/m³</b></div>
-              <div>Nhiệt độ: <b>${node.temperature}°C</b></div>
-              <div>Độ ẩm: <b>${node.humidity || 60}%</b></div>
-            </div>
-            <div style="font-size:10px;color:#888;margin-top:6px;font-style:italic">
-              * Dữ liệu đo thực tế từ Node cảm biến tại chỗ
-            </div>
-          </div>
-        `);
-        overlayMarkersRef.current.push(m);
-      });
-    }
-  }, [mapReady, leafletMap, layers.community, reports, stations, iotNodes, lang, searchPin, mapZoom]);
-
-
-
-  // Center on user location whenever it changes. Zoom in tighter when GPS is
-  // actually granted so the user lands at street level, not city level.
-  useEffect(() => {
-    if (mapReady && !location.loading) {
-      const z = location.permissionState === 'granted' ? 15 : 12;
-      panTo(location.lat, location.lng, z);
-    }
-  }, [location.lat, location.lng, location.loading, location.permissionState, mapReady, panTo]);
-
-  const recenterToGPS = useCallback(() => {
-    if (!leafletMap) return;
-    const z = location.permissionState === 'granted' ? 16 : 13;
-    leafletMap.setView([location.lat, location.lng], z, { animate: true });
-  }, [leafletMap, location.lat, location.lng, location.permissionState]);
-
-  const toggleLayer = (key: MapLayerKey) => {
-    setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  // Memoize civic events so the CivicHotspotLayer effect only re-runs when
-  // the underlying reports/stations actually change (not on every render).
-  const civicEvents = useMemo(
-    () =>
-      hotspotIntelligenceService.buildFromReports(
-        reports as never,
-        stations.map((s) => ({
-          uid: s.uid,
-          lat: s.lat,
-          lng: s.lng,
-          aqi: s.aqi,
-          station: s.station ?? null,
-        }))
-      ),
-    [reports, stations]
+  // Demo hotspots centered on user
+  const demoEvents = useMemo(
+    () => (demo ? getDemoHotspots({ lat: userCoords.lat, lng: userCoords.lng }) : []),
+    [demo, userCoords.lat, userCoords.lng]
   );
 
-  if (keyLoading) {
-    return (
-      <div className="h-full min-h-0 flex items-center justify-center bg-background">
-        <WindBoomerangLoader text={lang === 'vi' ? 'Đang tải bản đồ...' : 'Loading map...'} />
-      </div>
+  // Civic hotspots fusion
+  const civicHotspots = useMemo(() => {
+    return hotspotIntelligenceService.buildFromReports(
+      communityReports as never,
+      (rawStations ?? []).map((s) => ({
+        uid: s.id,
+        lat: s.lat,
+        lng: s.lng,
+        aqi: s.aqi,
+        station: s.name,
+      }))
     );
-  }
+  }, [communityReports, rawStations]);
 
-  if (keyError || !windyKey) {
-    return (
-      <div className="h-full min-h-0 flex items-center justify-center bg-background p-6">
-        <div className="glass-card p-8 text-center max-w-md">
-          <Wind className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-          <h3 className="font-heading text-lg font-bold text-foreground mb-2">
-            {lang === 'vi' ? 'Chưa cấu hình Windy API' : 'Windy API not configured'}
-          </h3>
-          <p className="text-sm text-muted-foreground font-body">
-            {lang === 'vi'
-              ? 'Vui lòng cấu hình WINDY_API_KEY để sử dụng bản đồ gió thời gian thực.'
-              : 'Please configure WINDY_API_KEY for real-time wind map.'}
-          </p>
-        </div>
-      </div>
+  const allHotspots = useMemo(() => [...civicHotspots, ...demoEvents], [civicHotspots, demoEvents]);
+
+  // Stations with distance calculated and sorted
+  const sortedStations = useMemo(() => {
+    return (rawStations ?? [])
+      .map((s) => ({
+        ...s,
+        distanceKm: hasKnownLocation ? calculateDistanceKm(userCoords.lat, userCoords.lng, s.lat, s.lng) : null,
+      }))
+      .sort((a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
+  }, [rawStations, userCoords, hasKnownLocation]);
+
+  // IoT Nodes with distance
+  const sortedIotNodes = useMemo(() => {
+    return (iotNodes ?? [])
+      .map((n) => ({
+        ...n,
+        distanceKm: hasKnownLocation ? calculateDistanceKm(userCoords.lat, userCoords.lng, n.lat, n.lng) : null,
+      }))
+      .sort((a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
+  }, [iotNodes, userCoords, hasKnownLocation]);
+
+  // Selected station object
+  const activeStation = useMemo(() => {
+    if (!selectedStationId) return sortedStations[0] || null;
+    return sortedStations.find((s) => s.id === selectedStationId) || sortedStations[0] || null;
+  }, [selectedStationId, sortedStations]);
+
+  // Selected node object
+  const activeNode = useMemo(() => {
+    return sortedIotNodes.find((n) => n.id === selectedStationId) || null;
+  }, [selectedStationId, sortedIotNodes]);
+
+  // Telemetry KPIs
+  const totalSensorsCount = sortedStations.length + sortedIotNodes.length;
+  const hasWeatherReading = hasAirQualityReading(weather);
+  const regionalMeanAqi = useMemo(() => {
+    if (sortedStations.length === 0) return hasWeatherReading ? weather.aqi : null;
+    const nearby = sortedStations.slice(0, 5);
+    const sum = nearby.reduce((acc, cur) => acc + cur.aqi, 0);
+    return Math.round(sum / nearby.length);
+  }, [sortedStations, weather.aqi, hasWeatherReading]);
+
+  const windSpeedKmh = hasWeatherMetric(weather, 'windSpeed') ? Math.round(weather.windSpeed) : null;
+  const windStatus = windSpeedKmh === null
+    ? (lang === 'vi' ? 'Chưa có số liệu gió' : 'Wind data unavailable')
+    : windSpeedKmh > 15
+    ? (lang === 'vi' ? 'Khuếch tán tốt' : 'Good dispersion')
+    : windSpeedKmh > 8
+      ? (lang === 'vi' ? 'Vừa phải' : 'Moderate dispersion')
+      : (lang === 'vi' ? 'Lặng gió, dễ ứ đọng' : 'Calm wind, pollutants may accumulate');
+  const highRiskHotspotsCount = allHotspots.filter((h) => h.confidence === 'high').length;
+
+  const onAvoidStation = (station: PAMStation) => {
+    try {
+      sessionStorage.setItem(
+        'airweave.smart-route.avoid',
+        JSON.stringify({
+          lat: station.lat,
+          lng: station.lng,
+          reason: `Trạm ${station.name} (AQI ${station.aqi})`,
+          ts: Date.now(),
+        })
+      );
+    } catch {
+      /* ignore */
+    }
+    toast.success(
+      lang === 'vi'
+        ? `Đã thêm trạm "${station.name}" vào danh sách né tránh trong Lộ trình sạch.`
+        : `Added "${station.name}" to Smart Route avoidance.`
     );
-  }
+    navigate('/smart-route');
+  };
+
+  const aqiRec = activeStation ? getAqiRecommendation(activeStation.aqi, lang) : null;
 
   return (
-    <FeatureExperienceLayout
-      lang={lang}
-      fullHeight
-      heading={lang === 'vi' ? 'Bản đồ vi vùng thời gian thực' : 'Real-time micro-area map'}
-      subheading={lang === 'vi'
-        ? 'AQI chính xác đến từng khu phố, cảnh báo tại chỗ.'
-        : 'AQI accurate to your block, with on-spot alerts.'}
-      benefits={[
-        { title: lang === 'vi' ? 'Hiểu rõ chất lượng không khí' : 'Understand air quality',
-          text: lang === 'vi'
-            ? 'Xem AQI theo từng vi vùng quanh bạn, chính xác đến khu phố.'
-            : 'See AQI per micro-area around you, accurate to the block.',
-          icon: <MapPin className="w-4 h-4" /> },
-        { title: lang === 'vi' ? 'Cảnh báo tại chỗ' : 'On-spot alerts',
-          text: lang === 'vi'
-            ? 'Nhận cảnh báo khi AQI xấu, chủ động điều chỉnh kế hoạch.'
-            : 'Get notified when AQI worsens and adjust your plans.',
-          icon: <Bell className="w-4 h-4" /> },
-      ]}
-      chips={lang === 'vi'
-        ? ['GPS', 'AQI thời gian thực', 'Bảo vệ sức khỏe']
-        : ['GPS', 'Real-time AQI', 'Health protection']}
-    >
-    <div className="h-full min-h-0 flex flex-col overflow-hidden rounded-2xl border border-border bg-card/30 space-y-2 p-2">
-      {/* Node Proximity Connection Badge */}
-      <NodeProximityBadge matchedNode={proximityNode} distanceMeters={proximityDistance} />
+    <div className="relative min-h-screen bg-[#050911] text-foreground font-body overflow-x-hidden selection:bg-cyan-500/30 selection:text-cyan-200">
+      <AuroraBackground />
 
-      <MapLocationBar
-        label={location.label}
-        fallbackText={lang === 'vi' ? 'Đang xác định...' : 'Locating...'}
-        accuracy={location.accuracy}
-        isRefining={location.isRefining}
-      />
+      <div className="relative z-10 w-full max-w-[1750px] mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-36 space-y-6">
 
+        {/* Top Header & Navigation */}
+        <div className="flex flex-wrap items-center justify-between gap-4 p-5 sm:p-6 rounded-3xl bg-[#0c1322]/80 backdrop-blur-xl border border-white/10 shadow-2xl">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate(-1)}
+                className="bg-white/[0.03] border-white/10 hover:bg-white/10 text-gray-300 rounded-xl"
+              >
+                <ArrowLeft className="w-4 h-4 mr-1.5" />
+                {lang === 'vi' ? 'Quay lại' : 'Back'}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate('/')}
+                className="bg-white/[0.03] border-white/10 hover:bg-white/10 text-gray-300 rounded-xl"
+              >
+                <Home className="w-4 h-4 mr-1.5" />
+                {lang === 'vi' ? 'Trang chủ' : 'Home'}
+              </Button>
+            </div>
 
-      <MapOverlayControls
-        lang={lang}
-        activeOverlay={activeOverlay}
-        onOverlayChange={setActiveOverlay}
-        layers={layers}
-        onToggleLayer={toggleLayer}
-      />
+            <div className="h-6 w-px bg-white/10 hidden sm:block"></div>
 
-      <div className="flex-1 min-h-0 relative overflow-hidden overscroll-none">
-        <div id="windy" ref={mapContainerRef} className="windy-map-container absolute inset-0" />
-        {mapReady && (
-          <MicroAirLayer
-            leafletMap={leafletMap}
-            enabled={layers.micro}
-            lang={lang}
-            badgeClassName="absolute bottom-14 left-3 z-20 px-3 py-1.5 rounded-full bg-card/90 backdrop-blur-sm border border-border shadow-sm text-[11px] font-body text-foreground max-w-[calc(100%-7rem)] truncate"
-          />
-        )}
-
-        {mapReady && (
-          <CivicHotspotLayer
-            leafletMap={leafletMap}
-            enabled={layers.civic}
-            lang={lang}
-            events={civicEvents}
-          />
-        )}
-
-        {/* Top bar: search (flex-1) + share button — never overlap */}
-        <div className="absolute top-3 left-3 right-3 z-20 flex items-center gap-2 pointer-events-none">
-          <div className="flex-1 min-w-0 max-w-[680px] pointer-events-auto">
-            <MapSearchBar
-              lang={lang}
-              onSelect={(lat, lng, label) => {
-                setSearchPin({ lat, lng, label });
-                panTo(lat, lng, 14);
-              }}
-            />
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-cyan-500 via-sky-600 to-blue-700 flex items-center justify-center shadow-lg shadow-cyan-500/30 ring-2 ring-cyan-400/30 shrink-0">
+                <Layers className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-[10px] font-heading font-bold uppercase tracking-wider text-cyan-300">
+                  <Sparkles className="w-3 h-3 text-cyan-400" />
+                  {lang === 'vi' ? 'BẢN ĐỒ KHÍ QUYỂN THỜI GIAN THỰC' : 'REAL-TIME ATMOSPHERIC MAP'}
+                </div>
+                <h1 className="text-xl sm:text-2xl font-heading font-black text-white tracking-tight leading-tight mt-0.5">
+                  {lang === 'vi' ? 'Bản Đồ AQI Vi Vùng' : 'Micro-Zone AQI Map'}
+                </h1>
+              </div>
+            </div>
           </div>
-          <div className="pointer-events-auto shrink-0">
-            <ShareMapButton lang={lang} targetRef={mapContainerRef} />
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.04] border border-white/10 text-xs text-gray-300 font-heading">
+              <MapPin className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="max-w-[200px] truncate">{userCoords.label}</span>
+            </div>
+            <DataStatusChip
+              status={demo ? 'demo' : hasWeatherReading || sortedStations.length ? 'live' : 'unavailable'}
+              lang={lang}
+              source={demo ? 'WAQI + IoT Nodes (Demo)' : 'WAQI Network + IoT'}
+              observedAt={weather.updatedAt || null}
+            />
           </div>
         </div>
 
-        {mapReady && (() => {
-          const times = stations
-            .map((s) => {
-              const t = s.time;
-              if (!t) return null;
-              if (typeof t === 'string') return new Date(t).getTime();
-              const iso = t.iso ?? t.s;
-              return iso ? new Date(iso).getTime() : null;
-            })
-            .filter((v): v is number => typeof v === 'number' && !isNaN(v));
-          const latest = times.length ? Math.max(...times) : null;
-          const ageMin = latest ? Math.floor((Date.now() - latest) / 60000) : null;
-          const status =
-            stations.length === 0 ? 'unavailable' :
-            ageMin === null ? 'estimated' :
-            ageMin <= 60 ? 'live' : 'stale';
-          return (
-            <div className="absolute bottom-3 left-3 z-20 flex items-center gap-1.5">
-              <DataStatusChip
-                status={status}
-                lang={lang}
-                source={`WAQI · ${stations.length} ${lang === 'vi' ? 'trạm' : 'stations'}`}
-                observedAt={latest ?? undefined}
-                className="bg-card/90 backdrop-blur-sm shadow-sm"
-              />
+        {/* 4 Telemetry KPI Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="rounded-2xl p-4 bg-gradient-to-br from-[#0B1528]/90 to-[#08101E]/95 border border-sky-500/20 shadow-xl backdrop-blur-xl">
+            <div className="flex items-center justify-between text-gray-400 text-xs font-heading">
+              <span>{lang === 'vi' ? 'CẢM BIẾN ONLINE' : 'ACTIVE SENSORS'}</span>
+              <Radio className="w-4 h-4 text-cyan-400" />
             </div>
-          );
-        })()}
-
-        {!mapReady && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-20">
-            <WindBoomerangLoader text={lang === 'vi' ? 'Đang khởi tạo Windy...' : 'Initializing Windy...'} />
+            <p className="text-2xl font-heading font-bold text-white mt-2">{totalSensorsCount}</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">
+              {sortedStations.length} {lang === 'vi' ? 'trạm WAQI' : 'WAQI stations'} · {sortedIotNodes.length} {lang === 'vi' ? 'node IoT' : 'IoT nodes'}
+            </p>
           </div>
-        )}
 
-        {mapReady && (
-          <button
-            onClick={recenterToGPS}
-            title={lang === 'vi' ? 'Về vị trí của tôi' : 'Recenter to my location'}
-            className="absolute right-3 bottom-24 z-20 w-10 h-10 rounded-full bg-card/95 backdrop-blur-sm border border-border shadow-md flex items-center justify-center text-primary hover:bg-primary/10 transition-colors"
-            aria-label={lang === 'vi' ? 'Về vị trí của tôi' : 'Recenter to my location'}
-          >
-            <LocateFixed className="w-5 h-5" />
-          </button>
-        )}
+          <div className="rounded-2xl p-4 bg-gradient-to-br from-[#0B1528]/90 to-[#08101E]/95 border border-sky-500/20 shadow-xl backdrop-blur-xl">
+            <div className="flex items-center justify-between text-gray-400 text-xs font-heading">
+              <span>{lang === 'vi' ? 'AQI TRUNG BÌNH VÙNG' : 'REGIONAL MEAN AQI'}</span>
+              <Activity className="w-4 h-4 text-emerald-400" />
+            </div>
+            <div className="flex items-baseline gap-2 mt-2">
+              <p className="text-2xl font-heading font-bold text-white">{regionalMeanAqi ?? '—'}</p>
+              {regionalMeanAqi !== null && <span className="text-[11px] px-2 py-0.5 rounded-md font-heading font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                {getAQIStatus(regionalMeanAqi, lang)}
+              </span>}
+            </div>
+            <p className="text-[11px] text-gray-400 mt-0.5">
+              {sortedStations.length ? (lang === 'vi' ? 'Tính từ các trạm quan trắc lân cận' : 'Calculated from nearby stations') : hasWeatherReading ? (lang === 'vi' ? 'Chỉ số tại vị trí hiện tại' : 'Current location reading') : (lang === 'vi' ? 'Chưa có dữ liệu' : 'No data available')}
+            </p>
+          </div>
 
-        <CommunityReportFAB
-          lang={lang}
-          userLat={location.lat}
-          userLng={location.lng}
-          gpsGranted={location.permissionState === 'granted'}
-          defaultOpen={autoOpenReport}
-          onSubmit={() => { /* realtime channel will inject the new report */ }}
-        />
+          <div className="rounded-2xl p-4 bg-gradient-to-br from-[#0B1528]/90 to-[#08101E]/95 border border-sky-500/20 shadow-xl backdrop-blur-xl">
+            <div className="flex items-center justify-between text-gray-400 text-xs font-heading">
+              <span>{lang === 'vi' ? 'KHÍ TƯỢNG & GIÓ' : 'WIND & DISPERSION'}</span>
+              <Wind className="w-4 h-4 text-sky-400" />
+            </div>
+            <p className="text-2xl font-heading font-bold text-sky-300 mt-2">{windSpeedKmh === null ? '—' : `${windSpeedKmh} km/h`}</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">
+              {windStatus}
+            </p>
+          </div>
+
+          <div className="rounded-2xl p-4 bg-gradient-to-br from-[#0B1528]/90 to-[#08101E]/95 border border-red-500/30 shadow-xl backdrop-blur-xl">
+            <div className="flex items-center justify-between text-gray-400 text-xs font-heading">
+              <span>{lang === 'vi' ? 'ĐIỂM NÓNG Ô NHIỄM' : 'CIVIC HOTSPOTS'}</span>
+              <Flame className="w-4 h-4 text-orange-400" />
+            </div>
+            <p className="text-2xl font-heading font-bold text-orange-400 mt-2">{allHotspots.length}</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">
+              {highRiskHotspotsCount} {lang === 'vi' ? 'điểm mức độ cao' : 'high severity alerts'}
+            </p>
+          </div>
+        </div>
+
+        {/* 2-Column Bento Studio Grid */}
+        <div className={`grid gap-6 items-start ${isFullscreen ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-12'}`}>
+
+          {/* LEFT COLUMN: Search, Sensor Explorer & Active Inspector (5 cols) */}
+          {!isFullscreen && (
+            <div className="lg:col-span-5 xl:col-span-5 space-y-5">
+
+              {/* Search Bar Container */}
+              <div className="rounded-3xl bg-gradient-to-br from-[#0B1528]/90 via-[#0D1D35]/85 to-[#08101E]/95 border border-sky-500/20 shadow-2xl backdrop-blur-xl p-5 space-y-4">
+                <div>
+                  <h3 className="font-heading font-bold text-sm text-white flex items-center gap-2">
+                    <Search className="w-4 h-4 text-cyan-400" />
+                    <span>{lang === 'vi' ? 'Tìm kiếm địa điểm vi vùng' : 'Search Micro-Location'}</span>
+                  </h3>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {lang === 'vi' ? 'Nhập tên phường, quận, ngõ phố để bay đến điểm đo' : 'Search streets, districts or areas to fly to'}
+                  </p>
+                </div>
+
+                <MapSearchBar
+                  lang={lang}
+                  onSelect={(lat, lng, label) => {
+                    setSearchPin({ lat, lng, label });
+                  }}
+                />
+
+                {/* Source Tabs */}
+                <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full pt-2">
+                  <TabsList className="grid w-full grid-cols-3 h-10 bg-black/40 border border-white/10 rounded-xl p-1">
+                    <TabsTrigger value="waqi" className="gap-1.5 text-xs rounded-lg data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-300">
+                      <Radio className="w-3.5 h-3.5" />
+                      <span>{lang === 'vi' ? 'Trạm' : 'WAQI'}</span>
+                      <span className="text-[10px] opacity-70">({sortedStations.length})</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="iot" className="gap-1.5 text-xs rounded-lg data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-300">
+                      <Cpu className="w-3.5 h-3.5" />
+                      <span>Node IoT</span>
+                      <span className="text-[10px] opacity-70">({sortedIotNodes.length})</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="community" className="gap-1.5 text-xs rounded-lg data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-300">
+                      <Users className="w-3.5 h-3.5" />
+                      <span>{lang === 'vi' ? 'Cộng đồng' : 'Crowd'}</span>
+                      <span className="text-[10px] opacity-70">({communityReports.length})</span>
+                    </TabsTrigger>
+                  </TabsList>
+
+                  {/* WAQI Stations List */}
+                  <TabsContent value="waqi" className="space-y-2.5 mt-3 max-h-[380px] overflow-y-auto pr-1">
+                    {sortedStations.length === 0 ? (
+                      <p className="text-xs text-gray-400 text-center py-6">
+                        {lang === 'vi' ? 'Đang tải danh sách trạm quan trắc...' : 'Loading monitoring stations...'}
+                      </p>
+                    ) : (
+                      sortedStations.map((s) => {
+                        const color = getAQIColorNew(s.aqi);
+                        const isSelected = s.id === (activeStation?.id || selectedStationId);
+
+                        return (
+                          <div
+                            key={s.id}
+                            onClick={() => setSelectedStationId(s.id)}
+                            className={`p-3 rounded-2xl border cursor-pointer transition-all duration-200 ${
+                              isSelected
+                                ? 'bg-cyan-950/30 border-cyan-400 ring-2 ring-cyan-400/30 shadow-lg shadow-cyan-500/10'
+                                : 'bg-white/[0.03] border-white/10 hover:bg-white/[0.06]'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-start gap-2.5 min-w-0">
+                                <div
+                                  className="w-10 h-10 rounded-xl flex flex-col items-center justify-center font-heading font-black text-white shrink-0 shadow-md"
+                                  style={{ backgroundColor: color }}
+                                >
+                                  <span className="text-xs leading-none">{s.aqi}</span>
+                                  <span className="text-[8px] opacity-80 uppercase leading-none mt-0.5">AQI</span>
+                                </div>
+
+                                <div className="min-w-0">
+                                  <h4 className="font-heading font-bold text-xs text-white truncate">
+                                    {localizeDemoText(s.name, lang)}
+                                  </h4>
+                                  <div className="flex items-center gap-2 mt-0.5 text-[11px] text-gray-400">
+                                    <span>{localizeDemoText(s.district, lang)}, {localizeDemoText(s.city, lang)}</span>
+                                    <span>·</span>
+                                    <span className="text-cyan-300 font-semibold">{s.distanceKm === null ? '—' : formatDistance(s.distanceKm, lang)}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex flex-col items-end gap-1 shrink-0">
+                                <span className={`text-[10px] font-heading font-bold px-2 py-0.5 rounded-full border ${getAqiRecommendation(s.aqi, lang).color}`}>
+                                  {getAQIStatus(s.aqi, lang)}
+                                </span>
+                                <span className="text-[10px] text-gray-500">
+                                  {s.trend === 'up'
+                                    ? (lang === 'vi' ? '↗ Tăng' : '↗ Rising')
+                                    : s.trend === 'down'
+                                      ? (lang === 'vi' ? '↘ Giảm' : '↘ Falling')
+                                      : s.trend === 'stable' ? (lang === 'vi' ? '→ Ổn định' : '→ Stable') : (lang === 'vi' ? 'Chưa đủ dữ liệu' : 'Not enough data')}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </TabsContent>
+
+                  {/* IoT Nodes List */}
+                  <TabsContent value="iot" className="space-y-2.5 mt-3 max-h-[380px] overflow-y-auto pr-1">
+                    {sortedIotNodes.length === 0 ? (
+                      <p className="text-xs text-gray-400 text-center py-6">
+                        {lang === 'vi' ? 'Không có cảm biến IoT nào đang kết nối tại khu vực.' : 'No active IoT nodes connected nearby.'}
+                      </p>
+                    ) : (
+                      sortedIotNodes.map((n) => (
+                        <div
+                          key={n.id}
+                          onClick={() => setSelectedStationId(n.id)}
+                          className={`p-3 rounded-2xl border cursor-pointer transition-all duration-200 ${
+                            selectedStationId === n.id
+                              ? 'bg-cyan-950/30 border-cyan-400 ring-2 ring-cyan-400/30'
+                              : 'bg-white/[0.03] border-white/10 hover:bg-white/[0.06]'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex flex-col items-center justify-center font-heading font-black text-cyan-300 shrink-0 shadow-md">
+                                <span className="text-xs leading-none">⚡ {n.aqi ?? '—'}</span>
+                                <span className="text-[8px] opacity-80 uppercase leading-none mt-0.5">AQI</span>
+                              </div>
+                              <div className="min-w-0">
+                                <h4 className="font-heading font-bold text-xs text-white truncate">{localizeDemoText(n.name, lang)}</h4>
+                                <p className="text-[11px] text-gray-400 truncate">{localizeDemoText(n.organization_name, lang) || (lang === 'vi' ? 'Cảm biến tại chỗ' : 'On-site sensor')}</p>
+                              </div>
+                            </div>
+                            <span className="text-[10px] text-cyan-300 font-semibold shrink-0">
+                              {n.distanceKm === null ? '—' : formatDistance(n.distanceKm, lang)}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </TabsContent>
+
+                  {/* Community Reports List */}
+                  <TabsContent value="community" className="space-y-2.5 mt-3 max-h-[380px] overflow-y-auto pr-1">
+                    {communityReports.length === 0 ? (
+                      <p className="text-xs text-gray-400 text-center py-6">
+                        {lang === 'vi' ? 'Chưa có báo cáo cộng đồng nào hôm nay.' : 'No community reports submitted today.'}
+                      </p>
+                    ) : (
+                      communityReports.map((r) => (
+                        <div
+                          key={r.id}
+                          className="p-3 rounded-2xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] transition-colors"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-xl shrink-0">🔥</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-heading font-bold text-white truncate">{localizeDemoText(r.text, lang) || (lang === 'vi' ? 'Khói bụi / phát thải' : 'Smoke / emissions')}</p>
+                              <p className="text-[10px] text-gray-400 mt-0.5">{new Date(r.created_at).toLocaleTimeString()}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </TabsContent>
+                </Tabs>
+              </div>
+
+              {/* Active Sensor Inspector Card */}
+              {activeStation && (
+                <div className="rounded-3xl bg-gradient-to-br from-[#0B1528]/90 via-[#0D1D35]/85 to-[#08101E]/95 border border-sky-500/25 shadow-2xl backdrop-blur-xl p-5 space-y-4">
+                  <div className="flex items-center justify-between gap-2 pb-3 border-b border-white/5">
+                    <div className="flex items-center gap-2">
+                      <Eye className="w-4 h-4 text-cyan-400" />
+                      <h3 className="font-heading font-bold text-sm text-white">
+                        {lang === 'vi' ? 'Thông số trạm đo' : 'Station Telemetry'}
+                      </h3>
+                    </div>
+                    <span className="text-[11px] text-gray-400 font-heading">
+                      ID: {activeStation.id}
+                    </span>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="font-heading font-black text-base text-white truncate">
+                        {localizeDemoText(activeStation.name, lang)}
+                      </h4>
+                      <div
+                        className="px-3 py-1 rounded-xl text-sm font-heading font-black text-white shadow-md"
+                        style={{ backgroundColor: getAQIColorNew(activeStation.aqi) }}
+                      >
+                        AQI {activeStation.aqi}
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-0.5">{localizeDemoText(activeStation.district, lang)}, {localizeDemoText(activeStation.city, lang)}</p>
+                  </div>
+
+                  {/* Metrics grid */}
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-0.5">
+                      <span className="text-[10px] text-gray-400 font-heading">{lang === 'vi' ? 'BỤI MỊN PM2.5' : 'FINE PARTICLES PM2.5'}</span>
+                      <p className="text-sm font-heading font-bold text-white">
+                        {activeStation.pm25 != null ? `${activeStation.pm25} µg/m³` : '—'}
+                      </p>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-0.5">
+                      <span className="text-[10px] text-gray-400 font-heading">{lang === 'vi' ? 'KHOẢNG CÁCH' : 'DISTANCE'}</span>
+                      <p className="text-sm font-heading font-bold text-cyan-300">
+                        {activeStation.distanceKm === null ? '—' : formatDistance(activeStation.distanceKm, lang)}
+                      </p>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-0.5">
+                      <span className="text-[10px] text-gray-400 font-heading">{lang === 'vi' ? 'NHIỆT ĐỘ & ĐỘ ẨM' : 'TEMPERATURE & HUMIDITY'}</span>
+                      <p className="text-sm font-heading font-bold text-white">
+                        {hasWeatherMetric(weather, 'temperature') ? `${weather.temperature}°C` : '—'} · {hasWeatherMetric(weather, 'humidity') ? `${weather.humidity}%` : '—'}
+                      </p>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-0.5">
+                      <span className="text-[10px] text-gray-400 font-heading">{lang === 'vi' ? 'XU HƯỚNG AQI' : 'AQI TREND'}</span>
+                      <p className="text-sm font-heading font-bold text-emerald-400">
+                        {activeStation.trend === 'up'
+                          ? (lang === 'vi' ? '↗ Đang tăng' : '↗ Rising')
+                          : activeStation.trend === 'down'
+                            ? (lang === 'vi' ? '↘ Đang giảm' : '↘ Falling')
+                            : activeStation.trend === 'stable' ? (lang === 'vi' ? '→ Ổn định' : '→ Stable') : (lang === 'vi' ? 'Chưa đủ dữ liệu' : 'Not enough data')}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Recommendation banner */}
+                  {aqiRec && <div className={`p-3.5 rounded-2xl border space-y-1 ${aqiRec.color}`}>
+                    <p className="text-xs font-heading font-bold flex items-center gap-1.5">
+                      <Info className="w-3.5 h-3.5" />
+                      <span>{aqiRec.title}</span>
+                    </p>
+                    <p className="text-[11px] leading-relaxed text-gray-300">
+                      {aqiRec.desc}
+                    </p>
+                  </div>}
+
+                  {/* Actions */}
+                  <div className="flex gap-2 pt-1">
+                    <Button
+                      onClick={() => onAvoidStation(activeStation)}
+                      className="flex-1 h-9 text-xs font-heading font-semibold bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl shadow-md shadow-cyan-600/20 gap-1.5"
+                    >
+                      <RouteIcon className="w-3.5 h-3.5" />
+                      <span>{lang === 'vi' ? 'Né trạm này trong Lộ trình' : 'Avoid in Route'}</span>
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          )}
+
+          {/* RIGHT COLUMN: Interactive High-Performance AQI Map (7 cols or 12 cols when fullscreen) */}
+          <div className={`${isFullscreen ? 'col-span-1' : 'lg:col-span-7 xl:col-span-7'} space-y-4`}>
+            <div className="rounded-3xl bg-gradient-to-br from-[#0B1528]/90 via-[#0D1D35]/85 to-[#08101E]/95 border border-sky-500/20 shadow-2xl backdrop-blur-xl p-5 sm:p-6 space-y-4">
+
+              {/* Map Card Header */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/5">
+                <div className="flex items-center gap-2.5">
+                  <Layers className="w-5 h-5 text-cyan-400 shrink-0" />
+                  <div>
+                    <h2 className="font-heading text-base font-bold text-white flex items-center gap-2">
+                      {lang === 'vi' ? 'Bản Đồ Không Gian Chất Lượng Không Khí' : 'Atmospheric Air Quality Canvas'}
+                    </h2>
+                    <p className="text-xs text-gray-400 font-body">
+                      {selectedStationId
+                        ? (lang === 'vi' ? `Đang tiêu điểm vào trạm ${activeStation?.name || 'được chọn'}` : `Focusing station ${activeStation?.name || 'selected'}`)
+                        : (lang === 'vi' ? 'Bản đồ Mapbox Dark hiển thị đa tầng dữ liệu trạm quan trắc, cảm biến IoT và điểm phát thải vi vùng' : 'Mapbox Dark retina canvas displaying fused stations, IoT nodes and emissions')}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedStationId(null);
+                      setSearchPin(null);
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-xs font-heading font-semibold text-cyan-300 transition-colors flex items-center gap-1.5 active:scale-95 shadow-sm"
+                    title={lang === 'vi' ? 'Zoom lại vị trí của bạn' : 'Zoom to your location'}
+                  >
+                    <Crosshair className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>{lang === 'vi' ? 'Về vị trí của tôi' : 'To My Location'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsFullscreen(!isFullscreen)}
+                    className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-xs font-heading text-gray-300 transition-colors flex items-center gap-1"
+                  >
+                    {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                    <span>{isFullscreen ? (lang === 'vi' ? 'Thu gọn' : 'Bento') : (lang === 'vi' ? 'Mở rộng' : 'Expand')}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Map Viewport Container */}
+              <div className={`w-full relative rounded-2xl overflow-hidden border border-white/10 shadow-2xl ${isFullscreen ? 'h-[780px]' : 'min-h-[580px] lg:h-[720px]'}`}>
+                <AQIInteractiveMap
+                  stations={sortedStations}
+                  iotNodes={sortedIotNodes}
+                  communityReports={communityReports}
+                  hotspotEvents={allHotspots}
+                  selectedStationId={selectedStationId}
+                  onSelectStation={(s) => setSelectedStationId(s.id)}
+                  onSelectNode={(n) => setSelectedStationId(n.id)}
+                  onAvoidStation={onAvoidStation}
+                  userLocation={hasKnownLocation ? userCoords : null}
+                  searchPin={searchPin}
+                  onResetFocus={() => {
+                    setSelectedStationId(null);
+                    setSearchPin(null);
+                  }}
+                  lang={lang}
+                  layers={layers}
+                  onToggleLayer={toggleLayer}
+                  isFullscreen={isFullscreen}
+                  onToggleFullscreen={() => setIsFullscreen(!isFullscreen)}
+                  className="w-full h-full"
+                />
+              </div>
+            </div>
+          </div>
+
+        </div>
+
       </div>
     </div>
-    </FeatureExperienceLayout>
   );
 };
 

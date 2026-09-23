@@ -1,65 +1,97 @@
+import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Database, Radio, Handshake, Layers, ShieldCheck } from 'lucide-react';
-import FeatureExperienceLayout from '@/components/feature-experience/FeatureExperienceLayout';
+import { Building2, Cpu, Radio, RefreshCw } from 'lucide-react';
+import AuroraBackground from '@/components/AuroraBackground';
+import { nodesApi } from '@/integrations/api';
+import { isDemoMode } from '@/lib/demo/demo-mode';
 
-const PartnerData = () => {
-  const { lang } = useOutletContext<{ lang: 'vi' | 'en' }>();
-
-  return (
-    <FeatureExperienceLayout
-      lang={lang}
-      badge={lang === 'vi' ? 'Giải pháp' : 'Solution'}
-      heading={lang === 'vi' ? 'Mở rộng dữ liệu qua cảm biến đối tác' : 'Expand coverage via partner sensors'}
-      subheading={lang === 'vi'
-        ? 'Schema sẵn sàng tiếp nhận cảm biến vi vùng từ trường học, doanh nghiệp BĐS, công ty quan trắc — khi có thoả thuận chính thức. Hiện chưa có tích hợp trực tiếp.'
-        : 'Schema is ready to ingest micro-area sensors from schools, real-estate, monitoring companies — under formal agreement. No live integration yet.'}
-      benefits={[
-        { icon: <Layers className="w-4 h-4" />, title: lang === 'vi' ? 'Vi vùng < 200m' : 'Micro-area < 200m', text: lang === 'vi' ? 'Bổ sung độ phủ ở nơi WAQI/Open-Meteo không có trạm.' : 'Fills gaps where WAQI/Open-Meteo have no station.' },
-        { icon: <Handshake className="w-4 h-4" />, title: lang === 'vi' ? 'Chỉ với đối tác đã ký' : 'Only signed partners', text: lang === 'vi' ? 'Cần MoU và kiểm chuẩn (factory hoặc co-located) trước khi nhận dữ liệu.' : 'Requires MoU and calibration (factory / co-located).' },
-        { icon: <ShieldCheck className="w-4 h-4" />, title: lang === 'vi' ? 'Aggregated, không cá nhân' : 'Aggregated, not personal', text: lang === 'vi' ? 'Dữ liệu lưu ở mức tổng hợp, không gắn người dùng.' : 'Stored aggregated, never tied to a user.' },
-      ]}
-      chips={[lang === 'vi' ? 'Cảm biến đối tác' : 'Partner sensors', lang === 'vi' ? 'Vi vùng' : 'Micro-area', 'Aggregated']}
-    >
-    <div className="h-full overflow-y-auto bg-background">
-      <div className="max-w-3xl mx-auto p-4 md:p-6 space-y-4">
-        <header className="flex items-center gap-2">
-          <Database className="w-5 h-5 text-primary" />
-          <h1 className="font-heading text-xl md:text-2xl font-bold text-foreground">
-            {lang === 'vi' ? 'Dữ liệu đối tác' : 'Partner Data'}
-          </h1>
-        </header>
-
-        <div className="rounded-2xl border border-dashed border-border bg-card/60 p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <Radio className="w-4 h-4 text-muted-foreground" />
-            <p className="text-sm font-heading font-bold text-foreground">
-              {lang === 'vi' ? 'Partner Sensor Metadata Placeholder' : 'Partner Sensor Metadata Placeholder'}
-            </p>
-            <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground border border-border font-heading font-bold uppercase">
-              {lang === 'vi' ? 'Chưa kết nối' : 'Not connected'}
-            </span>
-          </div>
-          <p className="text-xs text-muted-foreground font-body mt-1">
-            {lang === 'vi'
-              ? 'Cấu trúc dữ liệu sẵn sàng tiếp nhận cảm biến vi vùng từ đối tác (công ty quan trắc tư nhân, trường học, doanh nghiệp BĐS) khi có thoả thuận chính thức. Hiện chưa có tích hợp trực tiếp.'
-              : 'Schema is ready to ingest micro-area sensors from partners (private monitoring companies, schools, real-estate firms) once an official agreement exists. No live integration yet.'}
-          </p>
-          <pre className="mt-2 text-[10px] bg-muted/40 rounded p-3 overflow-x-auto font-mono text-muted-foreground">
-{`// Future schema — Partner sensor event
-{
-  sensor_id, partner_id,
-  lat, lng, location_grid,
-  pm25, pm10, co2, temperature, humidity,
-  timestamp,
-  calibration: "factory" | "co_located",
-  privacy_level: "aggregated_data"
-}`}
-          </pre>
-        </div>
-      </div>
-    </div>
-    </FeatureExperienceLayout>
-  );
+type PartnerNode = {
+  id: string;
+  name: string;
+  chip_id: string;
+  organization_id: string | null;
+  organization_name: string | null;
+  status: string;
+  aqi: number | null;
 };
 
-export default PartnerData;
+export default function PartnerData() {
+  const { lang } = useOutletContext<{ lang: 'vi' | 'en' }>();
+  const [nodes, setNodes] = useState<PartnerNode[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const result = await nodesApi.listNodes();
+      setNodes(Array.isArray(result) ? result : []);
+      setError(false);
+    } catch {
+      setNodes([]);
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void load(); }, []);
+
+  const partners = new Map<string, { name: string; nodes: PartnerNode[] }>();
+  for (const node of nodes) {
+    if (!node.organization_id || !node.organization_name) continue;
+    const group = partners.get(node.organization_id) ?? { name: node.organization_name, nodes: [] };
+    group.nodes.push(node);
+    partners.set(node.organization_id, group);
+  }
+
+  return (
+    <div className="h-full overflow-y-auto bg-[#050911] text-white relative font-body p-4 md:p-6 scrollbar-thin">
+      <AuroraBackground />
+      <div className="relative z-10 max-w-5xl mx-auto space-y-5">
+        <div className="rounded-2xl border border-white/10 bg-[#0a1120]/80 p-5 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <Building2 className="w-7 h-7 text-cyan-400" />
+            <div>
+              <h1 className="font-heading font-bold text-xl">{lang === 'vi' ? 'Mạng lưới cảm biến đối tác' : 'Partner sensor network'}</h1>
+              <p className="text-xs text-white/60">{lang === 'vi' ? 'Tổ chức và thiết bị đã đăng ký trong hệ thống' : 'Organizations and devices registered in the system'}</p>
+            </div>
+          </div>
+          <button type="button" onClick={() => void load()} disabled={loading} className="rounded-lg border border-white/20 px-3 py-2 text-xs hover:bg-white/10 disabled:opacity-50 flex items-center gap-2">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            {lang === 'vi' ? 'Tải lại' : 'Refresh'}
+          </button>
+        </div>
+
+        {isDemoMode() && <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-amber-200 text-sm">{lang === 'vi' ? 'Chế độ demo — dữ liệu trên trang này là dữ liệu mô phỏng.' : 'Demo mode — this page displays simulated data.'}</p>}
+        {error && <p role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-red-200 text-sm">{lang === 'vi' ? 'Không tải được dữ liệu thiết bị. Hãy thử lại.' : 'Could not load device data. Please retry.'}</p>}
+        {!loading && !error && partners.size === 0 && <p className="rounded-lg border border-white/10 bg-[#0a1120]/80 p-5 text-white/70">{lang === 'vi' ? 'Chưa có tổ chức nào có thiết bị đã đăng ký.' : 'No organization has a registered device yet.'}</p>}
+
+        {[...partners.entries()].map(([id, partner]) => (
+          <section key={id} className="rounded-2xl border border-white/10 bg-[#0a1120]/80 p-5 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="font-heading font-semibold text-base">{partner.name}</h2>
+              <span className="text-xs text-cyan-300">{partner.nodes.length} {lang === 'vi' ? 'thiết bị' : 'devices'}</span>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              {partner.nodes.map((node) => (
+                <div key={node.id} className="rounded-xl border border-white/10 bg-slate-900/70 p-3 flex items-start gap-3">
+                  <Cpu className="w-4 h-4 text-cyan-400 mt-0.5" />
+                  <div className="min-w-0">
+                    <p className="font-semibold text-sm truncate">{node.name}</p>
+                    <p className="text-xs text-white/50 font-mono truncate">{node.chip_id}</p>
+                    <p className="text-xs text-white/70 mt-1">
+                      <Radio className="w-3 h-3 inline mr-1" />
+                      {node.status === 'online' ? (lang === 'vi' ? 'Trực tuyến' : 'Online') : node.status === 'maintenance' ? (lang === 'vi' ? 'Bảo trì' : 'Maintenance') : (lang === 'vi' ? 'Ngoại tuyến' : 'Offline')}
+                      {' · AQI '}{node.status === 'online' && Number.isFinite(node.aqi) ? node.aqi : '—'}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+    </div>
+  );
+}

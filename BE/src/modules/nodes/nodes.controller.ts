@@ -13,6 +13,7 @@ import { NodesService } from './nodes.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { AdminGuard } from '../../common/guards/admin.guard';
 import { DeviceAuthGuard } from '../../common/guards/device-auth.guard';
+import { CurrentUser, type JwtUser } from '../../common/decorators/current-user.decorator';
 import {
   CreateOrganizationDto,
   CreateIotNodeDto,
@@ -43,6 +44,14 @@ export class NodesController {
     return this.nodesService.getSimulatorStatus();
   }
 
+  @Get('admin/alerts/status')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Trạng thái thực tế của các cảnh báo IoT và kênh gửi' })
+  getAlertStatus() {
+    return this.nodesService.getAlertStatus();
+  }
+
   @Post('admin/simulator/toggle')
   @UseGuards(JwtAuthGuard, AdminGuard)
   @ApiBearerAuth()
@@ -57,8 +66,8 @@ export class NodesController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Danh sách các Tổ chức (Trường học, Bệnh viện, Cơ quan)' })
-  listOrganizations() {
-    return this.nodesService.listOrganizations();
+  listOrganizations(@CurrentUser() user: JwtUser) {
+    return this.nodesService.listOrganizations(user);
   }
 
   @Post('organizations')
@@ -118,8 +127,8 @@ export class NodesController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Dữ liệu Bảng điều khiển riêng cho đại diện Tổ chức' })
-  getOrgDashboard(@Param('orgId') orgId: string) {
-    return this.nodesService.getOrgDashboard(orgId);
+  getOrgDashboard(@Param('orgId') orgId: string, @CurrentUser() user: JwtUser) {
+    return this.nodesService.getOrgDashboard(orgId, user);
   }
 
   // ---------- Endpoint cho thiết bị phần cứng ESP32 (xác thực bằng device token) ----------

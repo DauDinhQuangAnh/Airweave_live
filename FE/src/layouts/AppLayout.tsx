@@ -23,6 +23,9 @@ const FloatingAIChat = lazy(() => import('@/components/FloatingAIChat'));
 import GPSStatusChip from '@/components/GPSStatusChip';
 import { useRiskProfile } from '@/hooks/use-risk-profile';
 import EssentialProfileGuard from '@/components/profile/EssentialProfileGuard';
+import { getStoredLanguage, persistLanguage } from '@/lib/language';
+import { hasAirQualityReading } from '@/lib/air-quality';
+import { hasWeatherMetric } from '@/hooks/use-weather-data';
 
 const InnerLayout = ({
   lang,
@@ -41,7 +44,6 @@ const InnerLayout = ({
   const { risk } = useRiskProfile();
   const [profile, setProfile] = useState<{ display_name: string | null; avatar_url: string | null } | null>(null);
   const [chatEnabled, setChatEnabled] = useState(true);
-  const isMapRoute = route.pathname === '/map';
   const isDashboard = route.pathname === '/dashboard';
 
   useEffect(() => {
@@ -61,25 +63,6 @@ const InnerLayout = ({
   const initial = (profile?.display_name || user?.email || '?').charAt(0).toUpperCase();
   const handleSwitchAccount = async () => { await signOut(); navigate('/auth'); };
 
-  useEffect(() => {
-    const root = document.documentElement;
-    const body = document.body;
-
-    if (isMapRoute) {
-      root.classList.add('map-route-lock');
-      body.classList.add('map-route-lock');
-      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-    } else {
-      root.classList.remove('map-route-lock');
-      body.classList.remove('map-route-lock');
-    }
-
-    return () => {
-      root.classList.remove('map-route-lock');
-      body.classList.remove('map-route-lock');
-    };
-  }, [isMapRoute]);
-
   return (
     <SidebarProvider>
       <div className="h-svh flex w-full overflow-hidden">
@@ -89,7 +72,11 @@ const InnerLayout = ({
           <EssentialProfileGuard lang={lang} />
 
           <header className="h-14 flex items-center border-b border-border px-4 gap-2 shrink-0">
-            <SidebarTrigger className="mr-1" />
+            <SidebarTrigger
+              className="mr-1"
+              aria-label={lang === 'vi' ? 'Bật/tắt thanh điều hướng' : 'Toggle sidebar'}
+              title={lang === 'vi' ? 'Bật/tắt thanh điều hướng' : 'Toggle sidebar'}
+            />
             {!isDashboard && (
               <>
                 <Button
@@ -122,7 +109,7 @@ const InnerLayout = ({
               size="icon"
               onClick={toggleTheme}
               className="h-9 w-9"
-              title={theme === 'light' ? 'Chế độ tối' : 'Chế độ sáng'}
+              title={theme === 'light' ? (lang === 'vi' ? 'Chế độ tối' : 'Dark mode') : (lang === 'vi' ? 'Chế độ sáng' : 'Light mode')}
             >
               {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
             </Button>
@@ -139,7 +126,7 @@ const InnerLayout = ({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
-                  aria-label="Tài khoản"
+                  aria-label={lang === 'vi' ? 'Tài khoản' : 'Account'}
                   className="ml-1 w-9 h-9 rounded-full overflow-hidden ring-1 ring-border hover:ring-primary/50 transition-all flex items-center justify-center bg-gradient-to-br from-primary to-primary/70 text-primary-foreground font-heading font-bold text-sm shrink-0"
                 >
                   {profile?.avatar_url ? (
@@ -170,12 +157,7 @@ const InnerLayout = ({
               </DropdownMenuContent>
             </DropdownMenu>
           </header>
-          <main
-            className={cn(
-              'flex-1 min-h-0',
-              isMapRoute ? 'overflow-hidden' : 'overflow-auto'
-            )}
-          >
+          <main className="flex-1 min-h-0 overflow-y-auto scrollbar-thin">
             <Outlet context={{ lang }} />
           </main>
           {chatEnabled ? (
@@ -185,7 +167,7 @@ const InnerLayout = ({
                   type="button"
                   disabled
                   className="fixed left-6 bottom-6 z-[45] w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center"
-                  aria-label="Đang tải AI Assistant"
+                  aria-label={lang === 'vi' ? 'Đang tải trợ lý AI' : 'Loading AI assistant'}
                 >
                   <Loader2 className="w-6 h-6 animate-spin" />
                 </button>
@@ -194,11 +176,11 @@ const InnerLayout = ({
               <FloatingAIChat
                 lang={lang}
                 context={{
-                  location: location.label,
-                  aqi: weather.aqi,
-                  pm25: weather.pm25,
-                  temperature: weather.temperature,
-                  humidity: weather.humidity,
+                  location: location.status === 'active' || location.status === 'manual' ? location.label : undefined,
+                  aqi: hasAirQualityReading(weather) ? weather.aqi : undefined,
+                  pm25: hasWeatherMetric(weather, 'pm25') ? weather.pm25 : undefined,
+                  temperature: hasWeatherMetric(weather, 'temperature') ? weather.temperature : undefined,
+                  humidity: hasWeatherMetric(weather, 'humidity') ? weather.humidity : undefined,
                   riskGroup: risk.group,
                 }}
               />
@@ -208,7 +190,7 @@ const InnerLayout = ({
               type="button"
               onClick={() => setChatEnabled(true)}
               className="fixed left-6 bottom-6 z-[45] w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl hover:scale-[1.03] active:scale-95 flex items-center justify-center transition"
-              aria-label="Mở AI Assistant"
+              aria-label={lang === 'vi' ? 'Mở trợ lý AI' : 'Open AI assistant'}
             >
               <div className="relative">
                 <Bot className="w-6 h-6" />
@@ -225,7 +207,11 @@ const InnerLayout = ({
 const AppLayout = () => {
   const auth = useAuth();
   const { user, loading, onboardingCompleted } = auth;
-  const [lang, setLang] = useState<'vi' | 'en'>('vi');
+  const [lang, setLang] = useState<'vi' | 'en'>(getStoredLanguage);
+
+  useEffect(() => {
+    persistLanguage(lang);
+  }, [lang]);
 
   if (loading) {
     return (

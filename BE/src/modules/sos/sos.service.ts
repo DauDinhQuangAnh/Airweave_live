@@ -38,7 +38,7 @@ export class SosService {
     });
 
     const frontend = this.config.get<string>('FRONTEND_URL') ?? 'http://localhost:8080';
-    return { ...event, share_url: `${frontend}/medical-qr?token=${event.share_token}` };
+    return { ...event, share_url: `${frontend}/qr/${event.share_token}` };
   }
 
   findAll(userId: string) {

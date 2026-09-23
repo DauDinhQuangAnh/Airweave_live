@@ -146,6 +146,7 @@ const Onboarding = () => {
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [customNote, setCustomNote] = useState('');
   const [consent, setConsent] = useState(false);
+  const [healthConsent, setHealthConsent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   if (loading) {
@@ -165,7 +166,7 @@ const Onboarding = () => {
   const currentAnswer = currentQuestion ? answers[currentQuestion.id] : undefined;
   const isLastStep = isConsentStep;
   const hasAnswer = isConsentStep
-    ? true
+    ? healthConsent
     : currentQuestion?.multi
     ? Array.isArray(currentAnswer) && currentAnswer.length > 0
     : !!currentAnswer;
@@ -221,9 +222,6 @@ const Onboarding = () => {
       else if (hasRespiratory) sensitiveGroup = 'respiratory';
       else if (augmentedTier.includes('elderly')) sensitiveGroup = 'elderly';
 
-      setPrivacyConsent('health_profile', true);
-      setPrivacyConsent('behavior_tracking', consent);
-
       await Promise.all([
         preferencesApi.upsert({
           health_tier: augmentedTier,
@@ -239,17 +237,10 @@ const Onboarding = () => {
         profilesApi.completeOnboarding(),
       ]);
 
-      trackBehavior('complete_onboarding', {
-        healthTier: augmentedTier,
-        medicalCount: medicalHistory.length,
-        notSure,
-        sensitiveGroup,
-        commuteType,
-        activeHours,
-        routePriority,
-        alertMode,
-        consent,
-      });
+      setPrivacyConsent('health_profile', 'granted');
+      setPrivacyConsent('behavior_tracking', consent ? 'granted' : 'denied');
+
+      trackBehavior('health_profile_completed');
 
       await refreshOnboarding();
       toast.success(lang === 'vi' ? 'Đã hoàn tất thiết lập!' : 'Setup complete!');
@@ -322,11 +313,24 @@ const Onboarding = () => {
                 </h2>
                 <p className="text-sm text-muted-foreground leading-relaxed">
                   {lang === 'vi'
-                    ? 'Dữ liệu sức khỏe của bạn chỉ được lưu trữ trên thiết bị và dùng để cá nhân hóa cảnh báo AQI.'
-                    : 'Your health data is stored securely and used exclusively to personalize AQI notifications.'}
+                    ? 'Thông tin sức khỏe được lưu trong tài khoản để cá nhân hóa cảnh báo AQI. Bạn có thể quản lý quyền dùng dữ liệu trong Hồ sơ.'
+                    : 'Health information is saved to your account for personalized AQI alerts. You can manage data permissions in your profile.'}
                 </p>
 
                 <div className="p-4 rounded-xl border border-border bg-muted/30 space-y-3">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={healthConsent}
+                      onChange={(e) => setHealthConsent(e.target.checked)}
+                      className="mt-1 rounded border-border text-primary focus:ring-primary"
+                    />
+                    <span className="text-xs text-foreground font-body leading-relaxed">
+                      {lang === 'vi'
+                        ? 'Tôi đồng ý lưu các câu trả lời sức khỏe trong tài khoản để cá nhân hóa cảnh báo. (Bắt buộc để hoàn tất thiết lập; có thể Bỏ qua.)'
+                        : 'I agree to save my health answers in my account for personalized alerts. (Required to finish setup; you may Skip.)'}
+                    </span>
+                  </label>
                   <label className="flex items-start gap-3 cursor-pointer">
                     <input
                       type="checkbox"
@@ -336,8 +340,8 @@ const Onboarding = () => {
                     />
                     <span className="text-xs text-foreground font-body leading-relaxed">
                       {lang === 'vi'
-                        ? 'Tôi đồng ý chia sẻ dữ liệu ẩn danh để giúp cải thiện thuật toán dự báo ô nhiễm.'
-                        : 'I consent to sharing anonymized metrics to help improve air pollution forecasting models.'}
+                        ? 'Tôi đồng ý ghi nhận thống kê sử dụng tổng hợp trên thiết bị này (tùy chọn).'
+                        : 'I agree to record aggregate usage statistics on this device (optional).'}
                     </span>
                   </label>
                 </div>

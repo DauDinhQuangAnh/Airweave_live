@@ -43,6 +43,22 @@ export class NotificationsService {
     return appId && restKey ? { appId, restKey } : null;
   }
 
+  private alertThreshold(name: string, fallback: number): number {
+    const configured = Number(this.config.get(name));
+    return Number.isFinite(configured) && configured > 0 ? configured : fallback;
+  }
+
+  getIotAlertStatus() {
+    return {
+      co2Ppm: this.alertThreshold('IOT_CO2_ALERT_PPM', 1200),
+      uvIndex: this.alertThreshold('IOT_UV_ALERT_INDEX', 8),
+      pushConfigured: !!this.getOneSignalCreds(),
+      smsConfigured: false,
+      aqiBroadcastConfigured: false,
+      vocConfigured: false,
+    };
+  }
+
   async sendPush(requesterId: string, dto: SendPushDto) {
     const creds = this.getOneSignalCreds();
     if (!creds) {
@@ -154,14 +170,14 @@ export class NotificationsService {
     telemetry: { co2?: number; uv_index?: number; aqi?: number },
   ) {
     // 1. Cảnh báo CO2 ngột ngạt (> 1200 ppm) trong phòng học / văn phòng
-    if (telemetry.co2 && telemetry.co2 > 1200 && (await this.acquireAlertSlot(`co2:${node.id}`))) {
+    if (telemetry.co2 && telemetry.co2 > this.alertThreshold('IOT_CO2_ALERT_PPM', 1200) && (await this.acquireAlertSlot(`co2:${node.id}`))) {
       const title = `⚠️ CẢNH BÁO THÔNG GIÓ (CO2: ${telemetry.co2} ppm)`;
       const message = `Khu vực [${node.name} - ${node.organization_name || 'Cơ quan'}] đang bị bí khí (CO2: ${telemetry.co2} ppm). Khuyến nghị mở cửa sổ thông gió ngay!`;
       await this.sendAlertToManagers(node.organization_id, title, message, { nodeId: node.id, co2: telemetry.co2 });
     }
 
     // 2. Cảnh báo tia UV rất cao (>= 8.0) ngoài trời
-    if (telemetry.uv_index && telemetry.uv_index >= 8.0 && (await this.acquireAlertSlot(`uv:${node.id}`))) {
+    if (telemetry.uv_index && telemetry.uv_index >= this.alertThreshold('IOT_UV_ALERT_INDEX', 8) && (await this.acquireAlertSlot(`uv:${node.id}`))) {
       const title = `☀️ CẢNH BÁO TIA UV RẤT CAO (${telemetry.uv_index})`;
       const message = `Sân trường / Khuôn viên [${node.name}] chỉ số UV ở mức Rất Cao (${telemetry.uv_index}). Khuyến nghị vào trong nhà và thoa kem chống nắng!`;
       await this.sendAlertToManagers(node.organization_id, title, message, { nodeId: node.id, uv: telemetry.uv_index });

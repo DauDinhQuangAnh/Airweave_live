@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button';
 import { useLiveAirContext } from '@/contexts/live-air-context';
 import { useAppLang } from '@/hooks/use-app-lang';
 import { toast } from 'sonner';
+import { hasAirQualityReading } from '@/lib/air-quality';
+import { hasWeatherMetric } from '@/hooks/use-weather-data';
 
 export default function ShareLocationButton({ lang: propLang }: { lang?: 'vi' | 'en' }) {
   const contextLang = useAppLang();
@@ -13,16 +15,18 @@ export default function ShareLocationButton({ lang: propLang }: { lang?: 'vi' | 
   const [copied, setCopied] = useState(false);
   const [open, setOpen] = useState(false);
 
-  const hasLoc = !!(location.lat && location.lng);
+  const hasLoc = (location.status === 'active' || location.status === 'manual') &&
+    Number.isFinite(location.lat) && Number.isFinite(location.lng) &&
+    Math.abs(location.lat) <= 90 && Math.abs(location.lng) <= 180;
   const mapsUrl = hasLoc ? `https://www.google.com/maps?q=${location.lat},${location.lng}` : '';
   const acc = location.accuracy ? `±${location.accuracy}m` : '';
 
   const message =
     lang === 'vi'
       ? `🚨 SOS AirWeave — Cần hỗ trợ khẩn cấp\n📍 Vị trí của tôi (${acc}): ${location.label}\n🗺 ${mapsUrl}` +
-        (weather.aqi ? `\n💨 AQI hiện tại: ${weather.aqi} | PM2.5: ${weather.pm25?.toFixed(0)}` : '')
+        (hasAirQualityReading(weather) ? `\n💨 AQI: ${weather.aqi}${hasWeatherMetric(weather, 'pm25') ? ` | PM2.5: ${weather.pm25.toFixed(0)} µg/m³` : ''}` : '')
       : `🚨 SOS AirWeave — Emergency assistance required\n📍 My location (${acc}): ${location.label}\n🗺 ${mapsUrl}` +
-        (weather.aqi ? `\n💨 Live AQI: ${weather.aqi} | PM2.5: ${weather.pm25?.toFixed(0)}` : '');
+        (hasAirQualityReading(weather) ? `\n💨 AQI: ${weather.aqi}${hasWeatherMetric(weather, 'pm25') ? ` | PM2.5: ${weather.pm25.toFixed(0)} µg/m³` : ''}` : '');
 
   const copy = async () => {
     await navigator.clipboard.writeText(message);
@@ -96,8 +100,8 @@ export default function ShareLocationButton({ lang: propLang }: { lang?: 'vi' | 
 
       <p className="text-[10px] text-muted-foreground text-center">
         {lang === 'vi'
-          ? `Gửi nhanh đến người thân, bệnh viện hoặc 115 với tọa độ GPS chính xác ${acc}.`
-          : `Fast dispatch to family, hospitals, or 115 with high-accuracy GPS coordinates ${acc}.`}
+          ? `Bạn có thể tự gửi vị trí đã xác nhận đến người thân hoặc cơ sở y tế ${acc}.`
+          : `You can share your confirmed location with family or a healthcare provider ${acc}.`}
       </p>
     </div>
   );

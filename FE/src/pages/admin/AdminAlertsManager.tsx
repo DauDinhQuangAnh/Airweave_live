@@ -1,287 +1,62 @@
-import { useState } from 'react';
-import {
-  AlertTriangle,
-  BellRing,
-  ShieldCheck,
-  Save,
-  Radio,
-  Sliders,
-  Sparkles,
-  ChevronRight,
-  X,
-} from 'lucide-react';
-import { toast } from 'sonner';
+import { useEffect, useState } from 'react';
+import { AlertTriangle, BellRing, Loader2, ShieldCheck, ShieldX } from 'lucide-react';
+import { nodesApi } from '@/integrations/api';
+import { useAppLang } from '@/hooks/use-app-lang';
+import { isDemoMode } from '@/lib/demo/demo-mode';
+
+type AlertStatus = Awaited<ReturnType<typeof nodesApi.alertStatus>>;
 
 export default function AdminAlertsManager() {
-  const [aqiWarning, setAqiWarning] = useState(100);
-  const [aqiHazardous, setAqiHazardous] = useState(150);
-  const [vocThreshold, setVocThreshold] = useState(200);
-  const [co2Threshold, setCo2Threshold] = useState(800);
-  const [autoPush, setAutoPush] = useState(true);
-  const [autoSmsEmergency, setAutoSmsEmergency] = useState(true);
+  const lang = useAppLang();
+  const demo = isDemoMode();
+  const [status, setStatus] = useState<AlertStatus | null>(null);
+  const [loading, setLoading] = useState(!demo);
+  const [error, setError] = useState(false);
 
-  // Selected Rule Modal
-  const [selectedRule, setSelectedRule] = useState<any | null>(null);
+  useEffect(() => {
+    if (demo) return;
+    let active = true;
+    nodesApi.alertStatus()
+      .then((value) => { if (active) setStatus(value); })
+      .catch(() => { if (active) setError(true); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [demo]);
 
-  const rulesList = [
-    {
-      id: 'rule-aqi',
-      title: 'Quy tắc Ngưỡng Chỉ số AQI & Bụi Mịn',
-      category: 'AQI & PM2.5',
-      summary: `Cảnh báo Vàng (AQI ≥ ${aqiWarning}) · Báo động Đỏ (AQI ≥ ${aqiHazardous})`,
-      icon: Sliders,
-      color: 'text-amber-400',
-      badge: 'EPA Standard',
-      details: 'Tự động gửi thông báo Push Notification khẩn cấp cho người dùng trong bán kính 3km khi trạm quan trắc phát hiện chỉ số AQI vượt mốc đỏ.',
-    },
-    {
-      id: 'rule-gas',
-      title: 'Quy tắc Ngưỡng Khí độc VOCs & CO2',
-      category: 'Sensirion / NDIR Gas',
-      summary: `VOC Index (≥ ${vocThreshold}) · Nồng độ CO2 (≥ ${co2Threshold} ppm)`,
-      icon: AlertTriangle,
-      color: 'text-rose-400',
-      badge: 'Toxic Gas Alert',
-      details: 'Cảnh báo nồng độ khí hóa chất dễ bay hơi và bí khí CO2 trong các phòng học và khuôn viên tòa nhà.',
-    },
-    {
-      id: 'rule-dispatch',
-      title: 'Gửi tin nhắn Tự động (Auto Dispatch)',
-      category: 'Push & SMS Channels',
-      summary: `Push Notification (${autoPush ? 'Bật' : 'Tắt'}) · Emergency SMS (${autoSmsEmergency ? 'Bật' : 'Tắt'})`,
-      icon: Radio,
-      color: 'text-emerald-400',
-      badge: 'Auto Dispatch',
-      details: 'Tự động gửi tin nhắn SMS cho Đại diện Cơ quan & Ban quản trị hệ thống ngay khi node bị mất điện hoặc ngắt kết nối.',
-    },
+  if (demo) return <Unavailable lang={lang} message={lang === 'vi' ? 'Chế độ demo không chạy bộ gửi cảnh báo thật. Không có quy tắc mẫu nào được lưu hoặc kích hoạt.' : 'Demo mode does not run real alert dispatch. No sample rule is saved or activated.'} />;
+  if (loading) return <div className="flex items-center gap-2 text-white/70 p-6"><Loader2 className="w-4 h-4 animate-spin" />{lang === 'vi' ? 'Đang tải cấu hình cảnh báo…' : 'Loading alert configuration…'}</div>;
+  if (error || !status) return <Unavailable lang={lang} message={lang === 'vi' ? 'Không đọc được cấu hình cảnh báo từ máy chủ.' : 'Could not read alert configuration from the server.'} />;
+
+  const rows = [
+    { label: 'CO₂', value: `> ${status.co2Ppm} ppm`, active: true, note: lang === 'vi' ? 'Cảnh báo quản lý tổ chức khi node gửi số đo vượt ngưỡng' : 'Alerts organization managers when a node reports above the threshold' },
+    { label: 'UV', value: `≥ ${status.uvIndex}`, active: true, note: lang === 'vi' ? 'Cảnh báo quản lý tổ chức khi node gửi số đo vượt ngưỡng' : 'Alerts organization managers when a node reports above the threshold' },
+    { label: 'Push / OneSignal', value: status.pushConfigured ? (lang === 'vi' ? 'Đã cấu hình' : 'Configured') : (lang === 'vi' ? 'Chưa cấu hình' : 'Not configured'), active: status.pushConfigured, note: lang === 'vi' ? 'Chỉ gửi được khi có khóa OneSignal và người nhận hợp lệ' : 'Delivery requires OneSignal credentials and eligible recipients' },
+    { label: 'SMS', value: lang === 'vi' ? 'Chưa triển khai' : 'Not implemented', active: false, note: lang === 'vi' ? 'Không có cổng SMS hoặc API gửi tin trong backend' : 'No SMS gateway or dispatch API exists in the backend' },
+    { label: 'AQI / VOC', value: lang === 'vi' ? 'Chưa triển khai' : 'Not implemented', active: false, note: lang === 'vi' ? 'Không có quy tắc gửi cảnh báo toàn vùng cho các chỉ số này' : 'No regional alert dispatch rule exists for these readings' },
   ];
 
-  const handleSaveConfig = () => {
-    toast.success('Đã lưu cấu hình ngưỡng cảnh báo hệ thống!');
-    setSelectedRule(null);
-  };
-
-  return (
-    <div className="space-y-6 font-body">
-      {/* Mock Data Notice */}
-      <div className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-heading font-semibold">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
-          <span>
-            📌 <strong>[QUẢN LÝ SƠ BỘ QUY TẮC CẢNH BÁO]</strong> — Hiển thị rút gọn. Bấm vào bất kỳ quy tắc nào để mở Pop-up tinh chỉnh chi tiết.
+  return <div className="space-y-5 font-body">
+    <div>
+      <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-white"><BellRing className="w-5 h-5 text-amber-400" />{lang === 'vi' ? 'Trạng thái cảnh báo IoT' : 'IoT alert status'}</h2>
+      <p className="mt-1 text-xs text-white/60">{lang === 'vi' ? 'Đọc trực tiếp từ cấu hình máy chủ. Màn hình này không giả lập nút lưu; ngưỡng được cấu hình qua biến môi trường và cần khởi động lại backend.' : 'Read from server configuration. No simulated save action; thresholds are configured through environment variables and require a backend restart.'}</p>
+    </div>
+    <div className="grid gap-3 md:grid-cols-2">
+      {rows.map((row) => <div key={row.label} className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <span className="font-heading font-semibold text-white">{row.label}</span>
+          <span className={`flex items-center gap-1.5 text-xs font-semibold ${row.active ? 'text-emerald-300' : 'text-amber-300'}`}>
+            {row.active ? <ShieldCheck className="w-4 h-4" /> : <ShieldX className="w-4 h-4" />}{row.value}
           </span>
         </div>
-        <span className="hidden sm:inline-block px-2 py-0.5 rounded bg-amber-500/20 text-[10px] font-bold text-amber-200">
-          ALERTS SUMMARY
-        </span>
-      </div>
-
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="font-heading text-lg font-bold text-white flex items-center gap-2">
-            <BellRing className="w-5 h-5 text-amber-400" />
-            Cấu hình Quy tắc Cảnh báo & Ngưỡng Ô nhiễm
-          </h2>
-          <p className="text-xs text-white/60">
-            Các mốc ô nhiễm khẩn cấp tự động kích hoạt thông báo toàn mạng lưới.
-          </p>
-        </div>
-      </div>
-
-      {/* Clean Summary Rule Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {rulesList.map((rule) => {
-          const Icon = rule.icon;
-          return (
-            <div
-              key={rule.id}
-              onClick={() => setSelectedRule(rule)}
-              className="p-5 rounded-2xl bg-white/5 border border-white/10 hover:border-amber-400/50 hover:bg-white/[0.07] transition-all cursor-pointer space-y-4 relative group shadow-lg"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center ${rule.color}`}>
-                    <Icon className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="font-heading font-bold text-sm text-white group-hover:text-amber-300 transition-colors">
-                      {rule.title}
-                    </h3>
-                    <span className="text-[10px] text-white/50">{rule.category}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-950/60 border border-white/10 text-xs font-semibold text-white/80 font-mono">
-                {rule.summary}
-              </div>
-
-              <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs">
-                <span className="px-2 py-0.5 rounded bg-white/10 text-[10px] font-semibold text-amber-300">
-                  {rule.badge}
-                </span>
-                <span className="text-[11px] font-heading font-semibold text-amber-400 group-hover:text-amber-300 flex items-center gap-1">
-                  Chỉnh sửa <ChevronRight className="w-3.5 h-3.5" />
-                </span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* POP-UP MODAL: Tinh chỉnh Chi tiết Quy tắc Cảnh báo */}
-      {selectedRule && (
-        <div
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setSelectedRule(null);
-          }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in cursor-pointer"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg rounded-2xl bg-slate-900 border border-amber-500/40 p-6 shadow-2xl space-y-5 relative max-h-[90vh] overflow-y-auto cursor-default font-body"
-          >
-            <div className="flex items-start justify-between border-b border-white/10 pb-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
-                  <BellRing className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-heading font-bold text-base text-white">
-                    {selectedRule.title}
-                  </h3>
-                  <p className="text-xs text-white/50">{selectedRule.details}</p>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setSelectedRule(null)}
-                className="p-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Content per Rule */}
-            {selectedRule.id === 'rule-aqi' && (
-              <div className="space-y-4 text-xs font-body">
-                <div className="space-y-1.5">
-                  <div className="flex justify-between text-white/80 font-heading font-semibold">
-                    <span>Ngưỡng Cảnh báo Vàng (Sensitive Groups):</span>
-                    <span className="text-amber-400">AQI ≥ {aqiWarning}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="51"
-                    max="150"
-                    value={aqiWarning}
-                    onChange={(e) => setAqiWarning(Number(e.target.value))}
-                    className="w-full accent-amber-400"
-                  />
-                </div>
-
-                <div className="space-y-1.5 pt-2 border-t border-white/5">
-                  <div className="flex justify-between text-white/80 font-heading font-semibold">
-                    <span>Ngưỡng Báo động Đỏ (Hazardous):</span>
-                    <span className="text-rose-400">AQI ≥ {aqiHazardous}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="101"
-                    max="300"
-                    value={aqiHazardous}
-                    onChange={(e) => setAqiHazardous(Number(e.target.value))}
-                    className="w-full accent-rose-500"
-                  />
-                </div>
-              </div>
-            )}
-
-            {selectedRule.id === 'rule-gas' && (
-              <div className="space-y-4 text-xs font-body">
-                <div className="space-y-1.5">
-                  <div className="flex justify-between text-white/80 font-heading font-semibold">
-                    <span>Chỉ số Khí độc VOC Index (Sensirion SGP40):</span>
-                    <span className="text-amber-400">{vocThreshold} / 500</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="100"
-                    max="400"
-                    value={vocThreshold}
-                    onChange={(e) => setVocThreshold(Number(e.target.value))}
-                    className="w-full accent-amber-400"
-                  />
-                </div>
-
-                <div className="space-y-1.5 pt-2 border-t border-white/5">
-                  <div className="flex justify-between text-white/80 font-heading font-semibold">
-                    <span>Nồng độ CO2 Bí khí (ppm):</span>
-                    <span className="text-cyan-400">{co2Threshold} ppm</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="600"
-                    max="2000"
-                    step="50"
-                    value={co2Threshold}
-                    onChange={(e) => setCo2Threshold(Number(e.target.value))}
-                    className="w-full accent-cyan-400"
-                  />
-                </div>
-              </div>
-            )}
-
-            {selectedRule.id === 'rule-dispatch' && (
-              <div className="space-y-3 text-xs font-body">
-                <div className="p-3.5 rounded-xl bg-slate-950/60 border border-white/10 flex items-center justify-between">
-                  <div>
-                    <div className="font-heading font-bold text-white">Gửi Push Notification</div>
-                    <p className="text-white/50 text-[11px]">Thông báo ứng dụng cho người dùng gần trạm bị ô nhiễm.</p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={autoPush}
-                    onChange={(e) => setAutoPush(e.target.checked)}
-                    className="w-5 h-5 accent-cyan-400 cursor-pointer"
-                  />
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-slate-950/60 border border-white/10 flex items-center justify-between">
-                  <div>
-                    <div className="font-heading font-bold text-white">Gửi SMS Khẩn cấp SOS</div>
-                    <p className="text-white/50 text-[11px]">Gửi SMS cho đại diện Tổ chức khi Node mất nguồn.</p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={autoSmsEmergency}
-                    onChange={(e) => setAutoSmsEmergency(e.target.checked)}
-                    className="w-5 h-5 accent-amber-400 cursor-pointer"
-                  />
-                </div>
-              </div>
-            )}
-
-            <div className="pt-3 flex items-center justify-end gap-2 border-t border-white/10">
-              <button
-                type="button"
-                onClick={() => setSelectedRule(null)}
-                className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white font-heading font-semibold text-xs"
-              >
-                Hủy
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveConfig}
-                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-heading font-bold text-xs flex items-center gap-1.5"
-              >
-                <Save className="w-4 h-4" /> Lưu Quy tắc
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+        <p className="text-xs text-white/55">{row.note}</p>
+      </div>)}
     </div>
-  );
+  </div>;
+}
+
+function Unavailable({ lang, message }: { lang: 'vi' | 'en'; message: string }) {
+  return <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-6 text-amber-100 space-y-2" role="status">
+    <h2 className="flex items-center gap-2 font-heading font-bold"><AlertTriangle className="w-5 h-5" />{lang === 'vi' ? 'Không có cấu hình cảnh báo thật' : 'No live alert configuration'}</h2>
+    <p className="text-sm text-white/65">{message}</p>
+  </div>;
 }

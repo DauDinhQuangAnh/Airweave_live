@@ -334,10 +334,7 @@ export class AuthService {
     return { success: true };
   }
 
-  /**
-   * Tài khoản demo: tự tạo nếu chưa có, và reset onboarding + preferences
-   * để luôn thấy lại luồng cá nhân hoá (giữ đúng hành vi bản Supabase).
-   */
+  /** Tài khoản demo backend: giữ trạng thái onboarding ổn định, không xoá dữ liệu mỗi lần đăng nhập. */
   async demoLogin(meta?: { user_agent?: string; ip_address?: string }) {
     const email = (this.config.get<string>('DEMO_EMAIL') ?? 'demo@airweave.vn').toLowerCase();
     const password = this.config.get<string>('DEMO_PASSWORD') ?? 'AirWeave#Demo2026!';
@@ -357,10 +354,9 @@ export class AuthService {
 
     await this.prisma.profile.upsert({
       where: { user_id: user.id },
-      create: { user_id: user.id, display_name: 'Nguyễn Văn A', onboarding_completed: false },
-      update: { onboarding_completed: false },
+      create: { user_id: user.id, display_name: 'Nguyễn Văn A', onboarding_completed: true },
+      update: { onboarding_completed: true },
     });
-    await this.prisma.userPreference.deleteMany({ where: { user_id: user.id } });
 
     await this.recordLogin(user.id, meta?.user_agent, meta?.ip_address);
     return this.issueSession(user.id, email, meta);

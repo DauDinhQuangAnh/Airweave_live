@@ -172,12 +172,18 @@ export interface WaqiPointResult {
   aqi?: number;
   station?: string | null;
   distanceKm?: number | null;
+  // WAQI pollutant fields are AQI sub-indices, not µg/m³ concentrations.
+  pollutantAqi?: {
+    pm25: number | null;
+    pm10: number | null;
+    o3: number | null;
+    no2: number | null;
+    so2: number | null;
+    co: number | null;
+  };
+  // The isolated demo payload carries simulated concentrations.
   pm25?: number | null;
   pm10?: number | null;
-  o3?: number | null;
-  no2?: number | null;
-  so2?: number | null;
-  co?: number | null;
   temperature?: number | null;
   humidity?: number | null;
   wind?: number | null;

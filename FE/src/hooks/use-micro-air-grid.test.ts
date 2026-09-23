@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { pm25ToAQI } from '@/lib/air-quality';
-import { buildMicroGrid, microAirCacheKey } from './use-micro-air-grid';
+import { buildMicroGrid, fetchMicroAirPoints, microAirCacheKey } from './use-micro-air-grid';
+
+afterEach(() => vi.unstubAllGlobals());
 
 function bounds(south: number, west: number, north: number, east: number) {
   return {
@@ -36,5 +39,30 @@ describe('micro air grid helpers', () => {
     expect(pm25ToAQI(12)).toBe(50);
     expect(pm25ToAQI(35.4)).toBe(100);
     expect(pm25ToAQI(55.4)).toBe(150);
+  });
+
+  it('omits a point without a current PM2.5 reading instead of inventing zero', async () => {
+    const time = new Date().toISOString().slice(0, 16);
+    vi.stubGlobal('fetch', vi.fn(async (input: string) => ({
+      ok: true,
+      json: async () => input.includes('air-quality-api')
+        ? { current: { time, pm2_5: null, pm10: 10 } }
+        : { current: { time, temperature_2m: 26 } },
+    })));
+
+    expect(await fetchMicroAirPoints([{ lat: 10.7711, lng: 106.7711 }])).toEqual([]);
+  });
+
+  it('keeps a measured zero and leaves optional weather missing', async () => {
+    const time = new Date().toISOString().slice(0, 16);
+    vi.stubGlobal('fetch', vi.fn(async (input: string) => ({
+      ok: true,
+      json: async () => input.includes('air-quality-api')
+        ? { current: { time, pm2_5: 0, pm10: null } }
+        : { current: { time, temperature_2m: null } },
+    })));
+
+    const [point] = await fetchMicroAirPoints([{ lat: 10.7722, lng: 106.7722 }]);
+    expect(point).toMatchObject({ pm25: 0, aqi: 0, pm10: null, temperature: null });
   });
 });

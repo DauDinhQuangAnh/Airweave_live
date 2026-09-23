@@ -51,9 +51,9 @@ export default function FeatureExperienceLayout({
   }, []);
 
   return (
-    <div className={`relative ${fullHeight ? 'h-full min-h-0' : ''} ${className}`}>
+    <div className={`relative ${fullHeight ? 'h-full min-h-0 flex flex-col' : ''} ${className}`}>
       {/* Top Bar inside main content area with Glowing Radiating Info Button */}
-      <div className="flex items-center justify-between px-4 pt-3 pb-1 z-30">
+      <div className="flex items-center justify-between px-4 pt-2 pb-1 z-30 shrink-0">
         <div className="relative group">
           {/* Outer Radiating Light Glow Effect (Hào quang sáng loang) */}
           <div className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-sky-400 via-cyan-400 to-blue-500 opacity-60 blur-md group-hover:opacity-100 transition duration-500 animate-pulse pointer-events-none" />
@@ -113,7 +113,7 @@ export default function FeatureExperienceLayout({
       </AnimatePresence>
 
       {/* Main Feature Area (100% full width - Never pushed or squeezed) */}
-      <main className={`w-full ${fullHeight ? 'h-full min-h-0 flex flex-col' : ''}`}>
+      <main className={`w-full ${fullHeight ? 'flex-1 min-h-0 flex flex-col' : ''}`}>
         {banner}
         {children}
       </main>

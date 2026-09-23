@@ -1,10 +1,23 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Cpu, MapPin, Navigation, ChevronRight, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  Cpu,
+  MapPin,
+  Navigation,
+  ChevronRight,
+  RefreshCw,
+  Radio,
+  BatteryCharging,
+  Wifi,
+  Map,
+} from 'lucide-react';
 import { useLiveAirContext } from '@/contexts/live-air-context';
 import { nodesApi } from '@/integrations/api';
 import { useNavigate } from 'react-router-dom';
+import { getAQIColorNew } from '@/lib/pam-stations';
+import { useAppLang } from '@/hooks/use-app-lang';
+import { localizeDemoText } from '@/lib/localize-demo';
+import { hasAirQualityReading } from '@/lib/air-quality';
 
-/** Thuật toán Haversine tính khoảng cách giữa 2 điểm (km) */
 function getDistanceKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const toRad = (deg: number) => (deg * Math.PI) / 180;
   const R = 6371;
@@ -17,7 +30,8 @@ function getDistanceKm(lat1: number, lng1: number, lat2: number, lng2: number): 
 }
 
 export default function NearbyNodesMapWidget() {
-  const { location } = useLiveAirContext();
+  const lang = useAppLang();
+  const { location, weather } = useLiveAirContext();
   const navigate = useNavigate();
   const [nodes, setNodes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,7 +43,8 @@ export default function NearbyNodesMapWidget() {
       const data = await nodesApi.listNodes();
       setNodes(data || []);
     } catch {
-      // Silent catch
+      // Fallback: If unauthenticated or no nodes in DB, nodes will be []
+      setNodes([]);
     } finally {
       setLoading(false);
     }
@@ -39,9 +54,9 @@ export default function NearbyNodesMapWidget() {
     fetchNodes();
   }, []);
 
-  // Tính khoảng cách từ GPS hiện tại đến tất cả các Node và sắp xếp từ gần đến xa
   const sortedNearbyNodes = useMemo(() => {
-    if (!location.lat || !location.lng || nodes.length === 0) return nodes;
+    if (!nodes || nodes.length === 0) return [];
+    if ((location.status !== 'active' && location.status !== 'manual') || !Number.isFinite(location.lat) || !Number.isFinite(location.lng)) return nodes;
 
     return [...nodes]
       .map((node) => ({
@@ -59,110 +74,157 @@ export default function NearbyNodesMapWidget() {
   }, [selectedNodeId, sortedNearbyNodes]);
 
   return (
-    <div className="w-full rounded-2xl bg-slate-900/90 border border-cyan-500/20 p-4 sm:p-5 shadow-2xl backdrop-blur-md space-y-4 text-white">
-      {/* Widget Header */}
+    <div className="w-full rounded-2xl bg-gradient-to-br from-slate-900/90 via-slate-900/70 to-slate-950/90 border border-white/10 p-5 sm:p-6 shadow-xl backdrop-blur-xl space-y-4 text-white">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3.5">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
-            <Cpu className="w-5 h-5 animate-pulse" />
+          <div className="w-9 h-9 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+            <Cpu className="w-4 h-4 text-cyan-300" />
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="font-heading font-bold text-sm sm:text-base text-white">
-                Bản đồ Node IoT Khu vực Gần nhất
+                {lang === 'vi' ? 'Mạng Lưới IoT & Trạm Quan Trắc' : 'IoT Network & Monitoring Stations'}
               </h3>
-              <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 text-[10px] border border-cyan-500/30 font-semibold font-mono">
-                {sortedNearbyNodes.length} Node Hoạt động
+              <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 text-[10px] border border-cyan-500/30 font-semibold font-mono">
+                {sortedNearbyNodes.length > 0
+                  ? `${sortedNearbyNodes.length} ${lang === 'vi' ? 'Node Trong Danh Sách' : 'Listed Nodes'}`
+                  : (lang === 'vi' ? 'Không có node IoT' : 'No IoT nodes')}
               </span>
             </div>
-            <p className="text-xs text-white/60 flex items-center gap-1 mt-0.5">
-              <MapPin className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-              Vị trí của bạn: <span className="text-cyan-200 font-semibold">{location.label || 'Đang định vị GPS...'}</span>
+            <p className="text-xs text-white/50 flex items-center gap-1 mt-0.5">
+              <MapPin className="w-3 h-3 text-cyan-400 shrink-0" />
+              <span className="truncate max-w-[280px]">
+                {localizeDemoText(location.label, lang) || (lang === 'vi' ? 'Đang cập nhật vị trí GPS...' : 'Updating GPS location...')}
+              </span>
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+        <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
           <button
+            type="button"
             onClick={fetchNodes}
-            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors"
-            title="Làm mới danh sách Node"
+            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors"
+            title={lang === 'vi' ? 'Làm mới danh sách Node' : 'Refresh node list'}
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           </button>
           <button
+            type="button"
             onClick={() => navigate('/map')}
-            className="px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-600 text-slate-950 text-xs font-heading font-bold transition-all flex items-center gap-1 shadow-lg shadow-cyan-500/20"
+            className="px-3 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 text-xs font-heading font-bold transition-all flex items-center gap-1.5"
           >
-            Mở Bản đồ Lớn
-            <ChevronRight className="w-4 h-4" />
+            <Map className="w-3.5 h-3.5" />
+            <span>{lang === 'vi' ? 'Mở Bản Đồ' : 'Open Map'}</span>
+            <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
-      {/* Nodes List Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-        {sortedNearbyNodes.slice(0, 3).map((node) => {
-          const isSelected = activeNode?.id === node.id;
-          return (
-            <div
-              key={node.id}
-              onClick={() => setSelectedNodeId(node.id)}
-              className={`p-4 rounded-xl border transition-all cursor-pointer space-y-2.5 ${
-                isSelected
-                  ? 'bg-gradient-to-br from-cyan-950/90 via-slate-900 to-blue-950/90 border-cyan-400/50 shadow-lg shadow-cyan-500/10 ring-1 ring-cyan-500/30'
-                  : 'bg-white/5 border-white/10 hover:border-white/20 hover:bg-white/[0.07]'
-              }`}
-            >
-              {/* Header Title + Distance Badge (No overlap!) */}
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
-                  <h4 className="font-heading font-bold text-xs sm:text-sm text-white truncate" title={node.name}>
-                    {node.name}
-                  </h4>
-                </div>
-                {node.distanceKm !== undefined && (
-                  <span className="shrink-0 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
-                    <Navigation className="w-2.5 h-2.5" />
-                    {node.distanceKm < 1 ? `${Math.round(node.distanceKm * 1000)}m` : `${node.distanceKm}km`}
-                  </span>
-                )}
-              </div>
+      {/* When Real IoT Nodes are Present */}
+      {sortedNearbyNodes.length > 0 ? (
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {sortedNearbyNodes.slice(0, 3).map((node) => {
+              const isSelected = activeNode?.id === node.id;
+              const nodeColor = Number.isFinite(node.aqi) ? getAQIColorNew(node.aqi) : '#94a3b8';
+              return (
+                <div
+                  key={node.id}
+                  onClick={() => setSelectedNodeId(node.id)}
+                  className={`p-3.5 rounded-xl border transition-all cursor-pointer space-y-2 ${
+                    isSelected
+                      ? 'bg-gradient-to-br from-cyan-950/80 via-slate-900 to-blue-950/80 border-cyan-500/50 shadow-lg shadow-cyan-500/10 ring-1 ring-cyan-500/30'
+                      : 'bg-white/[0.03] border-white/5 hover:border-white/15 hover:bg-white/[0.06]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${node.status === 'online' ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+                      <h4 className="font-heading font-bold text-xs text-white truncate" title={localizeDemoText(node.name, lang)}>
+                        {localizeDemoText(node.name, lang)}
+                      </h4>
+                    </div>
+                    {node.distanceKm !== undefined && (
+                      <span className="shrink-0 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
+                        <Navigation className="w-2.5 h-2.5" />
+                        {node.distanceKm < 1 ? `${Math.round(node.distanceKm * 1000)}m` : `${node.distanceKm}km`}
+                      </span>
+                    )}
+                  </div>
 
-              <p className="text-xs text-white/60 truncate">
-                🏢 {node.organization_name || 'Tổ chức vi vùng'}
-              </p>
+                  <div className="flex items-center justify-between text-[11px] text-white/50">
+                    <span className="truncate">{localizeDemoText(node.location_name, lang) || 'Outdoor Solar Node'}</span>
+                    <span className="font-mono font-bold text-xs" style={{ color: nodeColor }}>
+                      AQI {Number.isFinite(node.aqi) ? node.aqi : '—'}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
 
-              <div className="grid grid-cols-3 gap-2 text-center pt-1">
-                <div className="p-2 rounded-lg bg-black/50 border border-white/10">
-                  <div className="text-[9px] text-white/50 uppercase font-heading font-semibold">AQI</div>
-                  <div className="font-heading font-extrabold text-sm text-emerald-400">{node.aqi}</div>
-                </div>
-                <div className="p-2 rounded-lg bg-black/50 border border-white/10">
-                  <div className="text-[9px] text-white/50 uppercase font-heading font-semibold">PM2.5</div>
-                  <div className="font-heading font-bold text-sm text-cyan-300">{node.pm25}</div>
-                </div>
-                <div className="p-2 rounded-lg bg-black/50 border border-white/10">
-                  <div className="text-[9px] text-white/50 uppercase font-heading font-semibold">Nhiệt độ</div>
-                  <div className="font-heading font-bold text-sm text-amber-300">{node.temperature}°C</div>
-                </div>
+          {activeNode && (
+            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/10 text-xs text-white/70 flex items-center justify-between flex-wrap gap-2 font-mono">
+              <span className="text-cyan-300 font-sans font-medium">
+                📡 {lang === 'vi' ? 'Chi tiết node' : 'Node details'}: <strong>{localizeDemoText(activeNode.name, lang)}</strong>{activeNode.edition ? ` (${activeNode.edition})` : ''}
+              </span>
+              <div className="flex items-center gap-3 text-[11px] text-white/50">
+                <span className="flex items-center gap-1">
+                  <BatteryCharging className="w-3 h-3 text-emerald-400" />
+                  {activeNode.battery == null ? '—' : `${activeNode.battery}%`}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Wifi className="w-3 h-3 text-cyan-400" />
+                  {activeNode.rssi == null ? '—' : `${activeNode.rssi} dBm`}
+                </span>
               </div>
             </div>
-          );
-        })}
-      </div>
-
-      {activeNode && (
-        <div className="p-3 rounded-xl bg-cyan-950/30 border border-cyan-500/20 text-xs text-white/80 flex items-center justify-between gap-3 flex-wrap font-body">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-            <span>Đang xem chi tiết Node: <strong>{activeNode.name}</strong></span>
+          )}
+        </div>
+      ) : (
+        /* Fallback View: Nearest Regional Reference Station (Never empty!) */
+        <div className="p-4 rounded-xl bg-gradient-to-r from-cyan-950/30 via-slate-900/60 to-slate-950/40 border border-cyan-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+              <Radio className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="font-heading font-bold text-sm text-white">
+                  {weather.station || (lang === 'vi' ? 'Dữ liệu không khí tại vị trí' : 'Air data at your location')}
+                </h4>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 text-[10px] font-mono font-semibold">
+                  {hasAirQualityReading(weather) ? (lang === 'vi' ? 'Có dữ liệu' : 'Data available') : (lang === 'vi' ? 'Chưa có dữ liệu' : 'No data')}
+                </span>
+              </div>
+              <p className="text-xs text-white/60 mt-0.5">
+                {lang === 'vi'
+                  ? 'Không có node IoT gần đây. Chỉ số bên phải lấy từ nguồn dữ liệu không khí của vị trí hiện tại (nếu khả dụng).'
+                  : 'No nearby IoT nodes. The reading on the right comes from the current location air-data source, when available.'}
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-4 text-[11px] text-cyan-300 font-mono">
-            <span>☀️ UV: {activeNode.uv_index || 2.3}</span>
-            <span>💨 CO2: {activeNode.co2 || 410} ppm</span>
-            <span>🔋 Pin: {activeNode.battery || 100}%</span>
+
+          <div className="flex items-center gap-3 self-end sm:self-center shrink-0">
+            <div className="text-right">
+              <span className="text-[10px] text-white/40 block font-mono">{lang === 'vi' ? 'Chỉ số hiện tại' : 'Current reading'}</span>
+              <span
+                className="font-heading font-black text-lg"
+                style={{ color: hasAirQualityReading(weather) ? getAQIColorNew(weather.aqi) : '#94a3b8' }}
+              >
+                AQI {hasAirQualityReading(weather) ? weather.aqi : '—'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('/map')}
+              className="p-2 rounded-xl bg-cyan-500 text-slate-950 hover:bg-cyan-400 font-bold transition-all shadow-md shadow-cyan-500/20"
+              title={lang === 'vi' ? 'Khám phá bản đồ toàn trạm' : 'Explore all stations on map'}
+            >
+              <Navigation className="w-4 h-4" />
+            </button>
           </div>
         </div>
       )}

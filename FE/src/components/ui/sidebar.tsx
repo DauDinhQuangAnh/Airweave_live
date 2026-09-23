@@ -217,7 +217,7 @@ const Sidebar = React.forwardRef<
 Sidebar.displayName = "Sidebar";
 
 const SidebarTrigger = React.forwardRef<React.ElementRef<typeof Button>, React.ComponentProps<typeof Button>>(
-  ({ className, onClick, ...props }, ref) => {
+  ({ className, onClick, 'aria-label': ariaLabel, ...props }, ref) => {
     const { toggleSidebar } = useSidebar();
 
     return (
@@ -231,10 +231,11 @@ const SidebarTrigger = React.forwardRef<React.ElementRef<typeof Button>, React.C
           onClick?.(event);
           toggleSidebar();
         }}
+        aria-label={ariaLabel || 'Toggle Sidebar'}
         {...props}
       >
         <PanelLeft />
-        <span className="sr-only">Toggle Sidebar</span>
+        <span className="sr-only">{ariaLabel || 'Toggle Sidebar'}</span>
       </Button>
     );
   },

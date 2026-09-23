@@ -6,10 +6,10 @@ export interface MicroAirPoint {
   lng: number;
   aqi: number;
   pm25: number;
-  pm10: number;
-  temperature: number;
-  humidity: number;
-  windSpeed: number;
+  pm10: number | null;
+  temperature: number | null;
+  humidity: number | null;
+  windSpeed: number | null;
   source: 'open-meteo';
   updatedAt: string;
 }
@@ -76,13 +76,26 @@ async function fetchJsonWithTimeout(url: string, timeoutMs = FETCH_TIMEOUT_MS): 
 }
 
 function asArray(data: any): any[] {
-  return Array.isArray(data) ? data : [data];
+  return Array.isArray(data) ? data : data ? [data] : [];
+}
+
+function currentUtcTime(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const raw = /(Z|[+-]\d{2}:\d{2})$/i.test(value) ? value : `${value}Z`;
+  const timestamp = Date.parse(raw);
+  const ageMs = Date.now() - timestamp;
+  return Number.isFinite(timestamp) && ageMs >= -5 * 60_000 && ageMs <= 2 * 60 * 60_000
+    ? new Date(timestamp).toISOString() : null;
+}
+
+function validNonnegative(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
 function fromCache(lat: number, lng: number): MicroAirPoint | null {
   const cached = pointCache.get(microAirCacheKey(lat, lng));
   if (!cached) return null;
-  if (Date.now() - cached.timestamp > CACHE_TTL_MS) {
+  if (Date.now() - cached.timestamp > CACHE_TTL_MS || !currentUtcTime(cached.point.updatedAt)) {
     pointCache.delete(microAirCacheKey(lat, lng));
     return null;
   }
@@ -118,37 +131,40 @@ export async function fetchMicroAirPoints(
   const longitudes = missing.map((p) => p.lng).join(',');
   const weatherUrl =
     `https://api.open-meteo.com/v1/forecast?latitude=${latitudes}&longitude=${longitudes}` +
-    '&current=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=auto';
+    '&current=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=UTC';
   const airUrl =
     `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${latitudes}&longitude=${longitudes}` +
-    '&current=pm2_5,pm10&timezone=auto&forecast_days=1';
+    '&current=pm2_5,pm10&timezone=UTC&forecast_days=1';
 
   const [weatherRaw, airRaw] = await Promise.all([
-    fetchJsonWithTimeout(weatherUrl),
+    fetchJsonWithTimeout(weatherUrl).catch(() => null),
     fetchJsonWithTimeout(airUrl),
   ]);
 
   const weatherList = asArray(weatherRaw);
   const airList = asArray(airRaw);
-  const fetched = missing.map((coord, index): MicroAirPoint => {
+  const fetched = missing.flatMap((coord, index): MicroAirPoint[] => {
     const weather = weatherList[index]?.current ?? {};
     const air = airList[index]?.current ?? {};
-    const pm25 = Math.round((air.pm2_5 ?? 0) * 10) / 10;
-    const pm10 = Math.round((air.pm10 ?? 0) * 10) / 10;
+    const updatedAt = currentUtcTime(air.time);
+    if (!updatedAt || !validNonnegative(air.pm2_5)) return [];
+    const weatherFresh = !!currentUtcTime(weather.time);
+    const pm25 = Math.round(air.pm2_5 * 10) / 10;
+    const pm10 = validNonnegative(air.pm10) ? Math.round(air.pm10 * 10) / 10 : null;
     const point = {
       lat: coord.lat,
       lng: coord.lng,
       aqi: pm25ToAQI(pm25),
       pm25,
       pm10,
-      temperature: Math.round(weather.temperature_2m ?? 0),
-      humidity: Math.round(weather.relative_humidity_2m ?? 0),
-      windSpeed: Math.round(weather.wind_speed_10m ?? 0),
+      temperature: weatherFresh && Number.isFinite(weather.temperature_2m) ? Math.round(weather.temperature_2m) : null,
+      humidity: weatherFresh && validNonnegative(weather.relative_humidity_2m) ? Math.round(weather.relative_humidity_2m) : null,
+      windSpeed: weatherFresh && validNonnegative(weather.wind_speed_10m) ? Math.round(weather.wind_speed_10m) : null,
       source: 'open-meteo' as const,
-      updatedAt: air.time || weather.time || new Date().toISOString(),
+      updatedAt,
     };
     saveCache(point);
-    return point;
+    return [point];
   });
 
   return [...cachedPoints, ...fetched];

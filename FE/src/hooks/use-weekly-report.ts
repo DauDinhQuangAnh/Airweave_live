@@ -3,7 +3,11 @@ import { format, subDays } from 'date-fns';
 
 interface DayReport {
   day: string;
+  date: string;
   aqi: number;
+  avgPm25: number;
+  peakAqi: number;
+  peakPm25: number;
   peakHour: number;
   minAqi: number;
 }
@@ -15,6 +19,7 @@ interface WeeklyReport {
   worstDay: string;
   bestTime: string;
   loading: boolean;
+  error: string | null;
 }
 
 function pm25ToAQI(pm25: number): number {
@@ -38,18 +43,22 @@ function pm25ToAQI(pm25: number): number {
 const DAY_LABELS_VI = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 const DAY_LABELS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-export function useWeeklyReport(lat: number, lng: number, lang: 'vi' | 'en') {
+export function useWeeklyReport(lat: number, lng: number, lang: 'vi' | 'en', enabled = true, periodDays = 7) {
   const [report, setReport] = useState<WeeklyReport>({
     days: [], avgAqi: 0, totalExposureHours: 0,
-    worstDay: '', bestTime: '', loading: true,
+    worstDay: '', bestTime: '', loading: true, error: null,
   });
 
   useEffect(() => {
+    if (!enabled) {
+      setReport({ days: [], avgAqi: 0, totalExposureHours: 0, worstDay: '', bestTime: '', loading: false, error: null });
+      return;
+    }
     const fetchWeekly = async () => {
-      setReport(prev => ({ ...prev, loading: true }));
+      setReport(prev => ({ ...prev, days: [], loading: true, error: null }));
 
       const today = new Date();
-      const startDate = format(subDays(today, 6), 'yyyy-MM-dd');
+      const startDate = format(subDays(today, periodDays - 1), 'yyyy-MM-dd');
       const endDate = format(today, 'yyyy-MM-dd');
 
       try {
@@ -69,10 +78,11 @@ export function useWeeklyReport(lat: number, lng: number, lang: 'vi' | 'en') {
         for (let i = 0; i < hourlyTimes.length; i++) {
           const dt = new Date(hourlyTimes[i]);
           const key = format(dt, 'yyyy-MM-dd');
+          if (!Number.isFinite(hourlyPm25[i])) continue;
           if (!dayMap.has(key)) {
             dayMap.set(key, { pm25Values: [], date: dt });
           }
-          dayMap.get(key)!.pm25Values.push(hourlyPm25[i] ?? 0);
+          dayMap.get(key)!.pm25Values.push(hourlyPm25[i]);
         }
 
         const labels = lang === 'vi' ? DAY_LABELS_VI : DAY_LABELS_EN;
@@ -88,11 +98,21 @@ export function useWeeklyReport(lat: number, lng: number, lang: 'vi' | 'en') {
           const avgPm25 = pm25Values.reduce((a, b) => a + b, 0) / pm25Values.length;
           const dayAqi = pm25ToAQI(avgPm25);
           const peakIdx = pm25Values.indexOf(Math.max(...pm25Values));
+          const peakPm25 = pm25Values[peakIdx];
           const minIdx = pm25Values.indexOf(Math.min(...pm25Values));
-          const minAqi = pm25ToAQI(pm25Values[minIdx] ?? 0);
+          const minAqi = pm25ToAQI(pm25Values[minIdx]);
 
           const dayLabel = labels[date.getDay()];
-          days.push({ day: dayLabel, aqi: dayAqi, peakHour: peakIdx, minAqi });
+          days.push({
+            day: dayLabel,
+            date: format(date, 'dd/MM'),
+            aqi: dayAqi,
+            avgPm25: Math.round(avgPm25 * 10) / 10,
+            peakAqi: pm25ToAQI(peakPm25),
+            peakPm25: Math.round(peakPm25 * 10) / 10,
+          peakHour: peakIdx,
+            minAqi,
+          });
 
           totalAqi += dayAqi;
           // Count hours with AQI > 100 as "exposure" hours
@@ -118,15 +138,16 @@ export function useWeeklyReport(lat: number, lng: number, lang: 'vi' | 'en') {
           worstDay: worstDayLabel,
           bestTime: bestTimeLabel,
           loading: false,
+          error: days.length ? null : (lang === 'vi' ? 'Không có số đo lịch sử cho vị trí này.' : 'No historical readings for this location.'),
         });
       } catch (err) {
         console.error('Weekly report fetch error:', err);
-        setReport(prev => ({ ...prev, loading: false }));
+        setReport(prev => ({ ...prev, days: [], loading: false, error: lang === 'vi' ? 'Không tải được lịch sử chất lượng không khí.' : 'Air-quality history could not be loaded.' }));
       }
     };
 
     fetchWeekly();
-  }, [lat, lng, lang]);
+  }, [lat, lng, lang, enabled, periodDays]);
 
   return report;
 }

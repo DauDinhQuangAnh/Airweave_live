@@ -115,6 +115,11 @@ const HeroDashboard = ({ lang, location, weather, onRequestLocation }: HeroDashb
                       Open-Meteo
                     </span>
                   )}
+                  {weather.source === 'demo' && (
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-heading font-semibold bg-amber-500/15 text-amber-600 border border-amber-500/20">
+                      Dữ liệu mô phỏng
+                    </span>
+                  )}
                 </div>
               )}
             </div>

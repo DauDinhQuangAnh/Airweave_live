@@ -4,20 +4,16 @@ import { usePremium } from '@/hooks/use-premium';
 
 const Premium = () => {
   const { lang } = useOutletContext<{ lang: 'vi' | 'en' }>();
-  const { isPremium } = usePremium();
+  const { isPremium, isBeta, loading } = usePremium();
 
   const features = lang === 'vi' ? [
-    'Lộ trình sạch nâng cao với né điểm nóng',
-    'Cảnh báo AQI cá nhân hoá theo hồ sơ sức khoẻ',
-    'Lịch sử phơi nhiễm chi tiết',
-    'Thông báo đẩy thời tiết xấu',
-    'Hỗ trợ ưu tiên',
+    'Bản đồ AQI và nguồn dữ liệu',
+    'Cảnh báo AQI theo ngưỡng đã cài đặt',
+    'Lịch sử dữ liệu không khí khi có nguồn',
   ] : [
-    'Advanced Smart Route with hotspot avoidance',
-    'Personalised AQI alerts by health profile',
-    'Detailed exposure history',
-    'Severe-weather push notifications',
-    'Priority support',
+    'AQI map with data provenance',
+    'AQI alerts using your configured threshold',
+    'Air quality history when source data is available',
   ];
 
   return (
@@ -29,14 +25,14 @@ const Premium = () => {
           <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded-full border font-heading font-bold uppercase ${
             isPremium ? 'bg-amber-500/15 text-amber-600 border-amber-500/30' : 'bg-muted text-muted-foreground border-border'
           }`}>
-            {isPremium ? (lang === 'vi' ? 'Đang dùng' : 'Active') : (lang === 'vi' ? 'Miễn phí' : 'Free')}
+            {loading ? '—' : isPremium ? (lang === 'vi' ? 'Đang dùng' : 'Active') : (lang === 'vi' ? 'Miễn phí' : 'Free')}
           </span>
         </header>
 
         <p className="text-xs text-muted-foreground font-body">
-          {lang === 'vi'
-            ? 'Bản Beta hiện đang mở Premium cho tất cả người dùng để thu thập phản hồi.'
-            : 'During beta, Premium is open to all users for feedback gathering.'}
+          {isBeta
+            ? lang === 'vi' ? 'Quyền Premium đang được bật cho tài khoản trong bản Beta. Chưa có thanh toán hay gói thuê bao.' : 'Premium access is enabled during beta. Payments and subscriptions are not available.'
+            : lang === 'vi' ? 'Quyền truy cập hiển thị theo trạng thái tài khoản. Chưa có chức năng mua gói trong ứng dụng.' : 'Access follows your account status. In-app purchases are not available.'}
         </p>
 
         <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-2">

@@ -9,6 +9,36 @@ import type Redis from 'ioredis';
 
 /** WAQI trả về trạm *gần nhất*, có thể cách hàng trăm km — quá xa thì coi như không có. */
 const MAX_STATION_DISTANCE_KM = 40;
+const finiteNumber = (value: unknown): number | null => {
+  const parsed = typeof value === 'number' || typeof value === 'string' && value.trim() !== '' ? Number(value) : NaN;
+  return Number.isFinite(parsed) ? parsed : null;
+};
+const numericReading = (value: unknown): number | null => {
+  const parsed = finiteNumber(value);
+  return parsed !== null && parsed >= 0 ? parsed : null;
+};
+const freshTimestamp = (value: unknown, utcWithoutOffset = false): string | null => {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const raw = utcWithoutOffset && !/(Z|[+-]\d{2}:\d{2})$/i.test(value) ? `${value}Z` : value;
+  const timestamp = Date.parse(raw);
+  const ageMs = Date.now() - timestamp;
+  return Number.isFinite(timestamp) && ageMs >= -5 * 60_000 && ageMs <= 2 * 60 * 60_000
+    ? new Date(timestamp).toISOString()
+    : null;
+};
+const stationTimestamp = (value: unknown): string | null => {
+  if (typeof value === 'string') return freshTimestamp(value);
+  if (!value || typeof value !== 'object') return null;
+  const time = value as { v?: unknown; stime?: unknown; tz?: unknown };
+  if (typeof time.v === 'number' && Number.isFinite(time.v)) {
+    const timestamp = new Date(time.v * 1000);
+    return Number.isFinite(timestamp.getTime()) ? freshTimestamp(timestamp.toISOString()) : null;
+  }
+  if (typeof time.stime === 'string' && typeof time.tz === 'string') {
+    return freshTimestamp(`${time.stime.replace(' ', 'T')}${time.tz}`);
+  }
+  return null;
+};
 
 @Injectable()
 export class AirService {
@@ -57,13 +87,16 @@ export class AirService {
       const iaqi = d.iaqi ?? {};
       const stationLat = d.city?.geo?.[0];
       const stationLng = d.city?.geo?.[1];
+      const aqi = numericReading(d.aqi);
+      const observedAt = freshTimestamp(d.time?.iso);
 
-      let dist: number | null = null;
-      if (typeof stationLat === 'number' && typeof stationLng === 'number') {
-        dist = distanceKm(dto.lat, dto.lng, stationLat, stationLng);
+      if (aqi === null || !Number.isFinite(stationLat) || !Number.isFinite(stationLng) || !observedAt) {
+        return { source: 'waqi', available: false, reason: 'invalid_or_stale_reading' };
       }
 
-      if (dist !== null && dist > MAX_STATION_DISTANCE_KM) {
+      const dist = distanceKm(dto.lat, dto.lng, stationLat, stationLng);
+
+      if (dist > MAX_STATION_DISTANCE_KM) {
         return {
           source: 'waqi',
           available: false,
@@ -76,20 +109,23 @@ export class AirService {
       return {
         source: 'waqi',
         available: true,
-        aqi: d.aqi,
+        aqi,
         station: d.city?.name ?? null,
-        distanceKm: dist !== null ? Math.round(dist * 10) / 10 : null,
-        pm25: iaqi.pm25?.v ?? null,
-        pm10: iaqi.pm10?.v ?? null,
-        o3: iaqi.o3?.v ?? null,
-        no2: iaqi.no2?.v ?? null,
-        so2: iaqi.so2?.v ?? null,
-        co: iaqi.co?.v ?? null,
+        distanceKm: Math.round(dist * 10) / 10,
+        // WAQI `iaqi` values are pollutant AQI sub-indices, NOT µg/m³.
+        pollutantAqi: {
+          pm25: numericReading(iaqi.pm25?.v),
+          pm10: numericReading(iaqi.pm10?.v),
+          o3: numericReading(iaqi.o3?.v),
+          no2: numericReading(iaqi.no2?.v),
+          so2: numericReading(iaqi.so2?.v),
+          co: numericReading(iaqi.co?.v),
+        },
         temperature: iaqi.t?.v ?? null,
         humidity: iaqi.h?.v ?? null,
         wind: iaqi.w?.v ?? null,
         dominantPollutant: d.dominentpol ?? null,
-        time: d.time?.iso ?? null,
+        time: observedAt,
       };
     });
   }
@@ -109,22 +145,20 @@ export class AirService {
           uid: s.uid,
           lat: s.lat,
           lng: s.lon,
-          aqi: Number(s.aqi) || null,
+          aqi: numericReading(s.aqi),
           station: s.station?.name ?? null,
-          time: s.station?.time ?? null,
+          time: stationTimestamp(s.station?.time),
         }))
-        .filter((s: any) => s.aqi !== null);
+        .filter((s: any) => s.aqi !== null && s.time !== null && Number.isFinite(s.lat) && Number.isFinite(s.lng));
 
-      return { source: 'waqi', available: true, stations };
+      return { source: 'waqi', available: stations.length > 0, stations };
     });
   }
 
   /**
    * Thời tiết + chất lượng không khí hiện tại.
-   * Thứ tự ưu tiên dữ liệu:
-   * 1. IoT Node vật lý (nếu có ở gần < 2km)
-   * 2. Trạm quan trắc WAQI
-   * 3. Open-Meteo (dự báo/fallback)
+   * AQI ưu tiên trạm WAQI hợp lệ, còn nồng độ PM lấy từ Open-Meteo.
+   * IoT telemetry được chọn riêng bởi live-air context phía ứng dụng.
    */
   async currentConditions(dto: GeoPointDto) {
     const key = `${dto.lat.toFixed(3)},${dto.lng.toFixed(3)}`;
@@ -135,11 +169,11 @@ export class AirService {
       const [weather, air] = await Promise.all([
         fetchJson<any>(
           `https://api.open-meteo.com/v1/forecast?latitude=${dto.lat}&longitude=${dto.lng}` +
-            `&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m&timezone=auto`,
+            `&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m&timezone=UTC`,
         ).catch(() => null),
         fetchJson<any>(
           `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${dto.lat}&longitude=${dto.lng}` +
-            `&current=pm2_5,pm10&hourly=pm2_5&timezone=auto&forecast_days=2`,
+            `&current=pm2_5,pm10&hourly=pm2_5&timezone=UTC&forecast_days=2`,
         ).catch(() => null),
       ]);
 
@@ -149,26 +183,37 @@ export class AirService {
 
       const cw = weather?.current ?? {};
       const ca = air?.current ?? {};
-      const humidity = Math.round(cw.relative_humidity_2m ?? 0);
+      const airUpdatedAt = freshTimestamp(ca.time, true);
+      const weatherUpdatedAt = freshTimestamp(cw.time, true);
+      const pm25 = airUpdatedAt ? numericReading(ca.pm2_5) : null;
+      const pm10 = airUpdatedAt ? numericReading(ca.pm10) : null;
+      if (!usable && pm25 === null) {
+        throw new ServiceUnavailableException('Chưa có số đo chất lượng không khí mới cho vị trí này');
+      }
       // WAQI (trạm quan trắc) và Open-Meteo (mô hình CAMS) đều là dữ liệu tham chiếu
       // đã hiệu chỉnh sẵn — KHÔNG áp hygroscopic correction lần nữa, nếu không sẽ hạ
       // thấp sai giá trị PM2.5 khi độ ẩm cao (rất thường gặp ở khí hậu VN).
       // Hiệu chỉnh này chỉ dành cho cảm biến laser thô của IoT node (xem nodes.service).
-      const pm25 = usable ? (waqi.pm25 ?? ca.pm2_5 ?? 0) : (ca.pm2_5 ?? 0);
-      const pm10 = usable ? (waqi.pm10 ?? ca.pm10 ?? 0) : (ca.pm10 ?? 0);
+      // Nồng độ PM chỉ lấy từ Open-Meteo; WAQI `iaqi.pm25` là chỉ số AQI phụ.
 
       return {
-        aqi: usable ? waqi.aqi : calculateAqiFromPm25(pm25),
-        pm25: Math.round(pm25 * 10) / 10,
-        pm10: Math.round(pm10 * 10) / 10,
-        temperature: Math.round(cw.temperature_2m ?? 0),
-        humidity,
-        windSpeed: Math.round(cw.wind_speed_10m ?? 0),
-        windDirectionDeg: Math.round(cw.wind_direction_10m ?? 0),
+        aqi: usable ? waqi.aqi : calculateAqiFromPm25(pm25!),
+        pm25: pm25 === null ? null : Math.round(pm25 * 10) / 10,
+        pm10: pm10 === null ? null : Math.round(pm10 * 10) / 10,
+        temperature: weatherUpdatedAt && finiteNumber(cw.temperature_2m) !== null ? Math.round(cw.temperature_2m) : null,
+        humidity: weatherUpdatedAt && numericReading(cw.relative_humidity_2m) !== null ? Math.round(cw.relative_humidity_2m) : null,
+        windSpeed: weatherUpdatedAt && numericReading(cw.wind_speed_10m) !== null ? Math.round(cw.wind_speed_10m) : null,
+        windDirectionDeg: weatherUpdatedAt && numericReading(cw.wind_direction_10m) !== null ? Math.round(cw.wind_direction_10m) : null,
         source: usable ? 'waqi' : 'open-meteo',
+        metricSources: {
+          aqi: usable ? 'waqi' : 'open-meteo',
+          pm25: pm25 === null ? null : 'open-meteo',
+          pm10: pm10 === null ? null : 'open-meteo',
+          weather: weatherUpdatedAt ? 'open-meteo' : null,
+        },
         station: usable ? waqi.station : null,
         dominantPollutant: usable ? waqi.dominantPollutant : null,
-        updatedAt: usable ? (waqi.time ?? new Date().toISOString()) : new Date().toISOString(),
+        updatedAt: usable ? waqi.time : airUpdatedAt,
 
         hourly: {
           time: air?.hourly?.time ?? [],
@@ -255,13 +300,15 @@ export class AirService {
       const results = await Promise.all(
         AirService.RANKING_CITIES.map(async (city) => {
           const data = await this.waqiByPoint({ lat: city.lat, lng: city.lng }).catch(() => null);
-          return data?.available ? { ...city, aqi: data.aqi as number, station: data.station } : null;
+          return data?.available ? { ...city, aqi: data.aqi as number, station: data.station, observedAt: data.time as string } : null;
         }),
       );
 
       const cities = results.filter(Boolean).sort((a, b) => b!.aqi - a!.aqi);
       return {
-        updatedAt: new Date().toISOString(),
+        scope: 'selected_cities',
+        generatedAt: new Date().toISOString(),
+        updatedAt: cities.length ? new Date(Math.max(...cities.map((city) => Date.parse(city!.observedAt)))).toISOString() : null,
         cities: cities.map((c, i) => ({ rank: i + 1, ...c })),
       };
     });

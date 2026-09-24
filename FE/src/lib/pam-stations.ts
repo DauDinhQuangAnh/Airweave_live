@@ -4,9 +4,6 @@ export interface PAMStation {
   district: string;
   city: string;
   aqi: number;
-  // Optional: WAQI bounds endpoint only returns AQI per station. Detailed
-  // pollutants are only available via per-station feed calls, so we leave
-  // these undefined rather than fabricating values.
   pm25?: number;
   pm10?: number;
   no2?: number;
@@ -17,10 +14,6 @@ export interface PAMStation {
   time?: string | null;
   source?: 'waqi' | 'fallback';
 }
-
-// NOTE: No hardcoded / simulated stations. All station data must come from
-// the real WAQI API via `useWaqiStations`. Do not re-introduce mock arrays
-// or random simulators here — they were removed intentionally.
 
 export function getAQIColorNew(aqi: number) {
   if (aqi <= 50) return '#22c55e';
@@ -38,4 +31,17 @@ export function getAQIStatusVi(aqi: number) {
   if (aqi <= 200) return '🔴 Không lành mạnh';
   if (aqi <= 300) return '🟣 Rất xấu';
   return '☠️ Nguy hiểm';
+}
+
+export function getAQIStatusEn(aqi: number) {
+  if (aqi <= 50) return '✅ Good';
+  if (aqi <= 100) return '🟡 Moderate';
+  if (aqi <= 150) return '⚠️ Unhealthy for Sensitive';
+  if (aqi <= 200) return '🔴 Unhealthy';
+  if (aqi <= 300) return '🟣 Very Unhealthy';
+  return '☠️ Hazardous';
+}
+
+export function getAQIStatus(aqi: number, lang: 'vi' | 'en' = 'vi') {
+  return lang === 'en' ? getAQIStatusEn(aqi) : getAQIStatusVi(aqi);
 }

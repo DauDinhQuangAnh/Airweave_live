@@ -31,10 +31,13 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { airApi, communityApi, nodesApi } from '@/integrations/api';
 import { useCommunityRealtime } from '@/hooks/use-community-realtime';
 import { hotspotIntelligenceService, HotspotEvent } from '@/lib/civic-hotspot';
-import { getDemoHotspots } from '@/lib/civic-hotspot/demo-hotspots';
 import { isDemoMode } from '@/lib/demo/demo-mode';
 import { localizeDemoText } from '@/lib/localize-demo';
 import { toast } from 'sonner';
+import { hasFreshStationReading } from '@/hooks/use-waqi-stations';
+import { hasConfirmedCoordinates } from '@/lib/geo-validation';
+import { hasAirQualityReading } from '@/lib/air-quality';
+import { hasWeatherMetric } from '@/hooks/use-weather-data';
 
 /** Thuật toán Haversine tính khoảng cách (km) */
 function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -89,20 +92,6 @@ function getAqiRecommendation(aqi: number, lang: 'vi' | 'en') {
   };
 }
 
-function hasAirQualityReading(weather: any): boolean {
-  return Boolean(weather && !weather.loading && !weather.error && weather.aqi > 0);
-}
-
-function hasWeatherMetric(weather: any, key: 'temperature' | 'humidity' | 'windSpeed'): boolean {
-  return Boolean(
-    weather &&
-    !weather.loading &&
-    !weather.error &&
-    typeof weather[key] === 'number' &&
-    Number.isFinite(weather[key])
-  );
-}
-
 export default function AirMap() {
   const { lang } = useOutletContext<{ lang: 'vi' | 'en' }>();
   const { location, weather } = useLiveAirContext();
@@ -116,6 +105,9 @@ export default function AirMap() {
   const [communityReports, setCommunityReports] = useState<any[]>([]);
   const [iotNodes, setIotNodes] = useState<any[]>([]);
   const [rawStations, setRawStations] = useState<PAMStation[]>([]);
+  const [stationState, setStationState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [iotState, setIotState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [communityState, setCommunityState] = useState<'loading' | 'ready' | 'error'>('loading');
 
   const [layers, setLayers] = useState({ community: true, micro: true, civic: true });
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -126,25 +118,22 @@ export default function AirMap() {
 
   const demo = isDemoMode();
 
-  const hasKnownLocation = Boolean(
-    location.status !== 'idle' &&
-    location.status !== 'denied' &&
-    location.lat &&
-    location.lng
-  );
+  const hasKnownLocation = hasConfirmedCoordinates(location);
 
   const userCoords = useMemo(
     () => ({
-      lat: location.lat || 21.0285,
-      lng: location.lng || 105.8542,
-      label: location.label || (lang === 'vi' ? 'Hà Nội' : 'Hanoi'),
+      lat: hasKnownLocation ? location.lat : 21.0285,
+      lng: hasKnownLocation ? location.lng : 105.8542,
+      label: hasKnownLocation ? (location.label || `${location.lat}, ${location.lng}`) : (lang === 'vi' ? 'Khu vực bản đồ mặc định: Hà Nội' : 'Default map area: Hanoi'),
     }),
-    [location.lat, location.lng, location.label, lang]
+    [location.lat, location.lng, location.label, lang, hasKnownLocation]
   );
 
   // Load Stations over WAQI bounds or list
   useEffect(() => {
     let active = true;
+    setStationState('loading');
+    setRawStations([]);
     const loadWAQI = async () => {
       try {
         const data = await airApi.waqiBounds(
@@ -153,49 +142,55 @@ export default function AirMap() {
           userCoords.lat + 0.4,
           userCoords.lng + 0.4
         );
-        if (active && data?.stations) {
-          const mapped = data.stations.map((s: any) => ({
+        if (!Array.isArray(data?.stations)) throw new Error('Invalid WAQI bounds response');
+        if (active) {
+          const mapped: PAMStation[] = data.stations.filter(hasFreshStationReading).map((s: any): PAMStation => ({
             id: `waqi-${s.uid}`,
             name: s.station || 'Trạm quan trắc WAQI',
-            city: userCoords.label.split(',')[0],
-            district: 'Khu vực lân cận',
+            city: 'WAQI',
+            district: s.station || '—',
             aqi: s.aqi,
             lat: s.lat,
             lng: s.lng,
-            pm25: null,
-            pm10: null,
-            humidity: null,
-            temperature: null,
-            trend: s.aqi <= 50 ? 'stable' : s.aqi <= 100 ? 'up' : 'down',
-            updatedAt: s.time?.iso || new Date().toISOString(),
+            time: s.time,
+            source: 'waqi',
           }));
           setRawStations(mapped);
+          setStationState('ready');
         }
       } catch (err) {
         console.warn('WAQI bounds fetch error:', err);
+        if (active) { setRawStations([]); setStationState('error'); }
       }
     };
     loadWAQI();
     return () => {
       active = false;
     };
-  }, [userCoords.lat, userCoords.lng, userCoords.label]);
+  }, [userCoords.lat, userCoords.lng]);
 
   // Load IoT Nodes & Community Reports
   useEffect(() => {
     let active = true;
     const load = async () => {
-      try {
-        const [rData, nData] = await Promise.all([
-          communityApi.listActive(undefined, 200).catch(() => []),
-          nodesApi.listNodes().catch(() => []),
-        ]);
-        if (active) {
-          setCommunityReports(Array.isArray(rData) ? rData : []);
-          setIotNodes(Array.isArray(nData) ? nData : []);
-        }
-      } catch (err) {
-        console.warn('Failed to load map overlays:', err);
+      const [reportsResult, nodesResult] = await Promise.allSettled([
+        communityApi.listActive(undefined, 200),
+        nodesApi.listNodes(),
+      ]);
+      if (!active) return;
+      if (reportsResult.status === 'fulfilled' && Array.isArray(reportsResult.value)) {
+        setCommunityReports(reportsResult.value);
+        setCommunityState('ready');
+      } else {
+        setCommunityReports([]);
+        setCommunityState('error');
+      }
+      if (nodesResult.status === 'fulfilled' && Array.isArray(nodesResult.value)) {
+        setIotNodes(nodesResult.value);
+        setIotState('ready');
+      } else {
+        setIotNodes([]);
+        setIotState('error');
       }
     };
     load();
@@ -210,13 +205,8 @@ export default function AirMap() {
     onDeleted: (id) => setCommunityReports((prev) => prev.filter((x) => x.id !== id)),
   });
 
-  const demoEvents = useMemo(
-    () => (demo ? getDemoHotspots({ lat: userCoords.lat, lng: userCoords.lng }) : []),
-    [demo, userCoords.lat, userCoords.lng]
-  );
-
   const civicHotspots = useMemo(() => {
-    return hotspotIntelligenceService.buildFromReports(
+    const events = hotspotIntelligenceService.buildFromReports(
       communityReports as never,
       (rawStations ?? []).map((s) => ({
         uid: s.id,
@@ -226,9 +216,10 @@ export default function AirMap() {
         station: s.name,
       }))
     );
-  }, [communityReports, rawStations]);
+    return demo ? events.map((event) => ({ ...event, isDemo: true })) : events;
+  }, [communityReports, rawStations, demo]);
 
-  const allHotspots = useMemo(() => [...civicHotspots, ...demoEvents], [civicHotspots, demoEvents]);
+  const allHotspots = civicHotspots;
 
   // Stations with distance calculated and sorted
   const sortedStations = useMemo(() => {
@@ -255,14 +246,16 @@ export default function AirMap() {
     return sortedStations.find((s) => s.id === selectedStationId) || sortedStations[0] || null;
   }, [selectedStationId, sortedStations]);
 
-  const totalSensorsCount = sortedStations.length + sortedIotNodes.length;
+  const onlineNodeCount = sortedIotNodes.filter((node) => node.status === 'online' && Number.isFinite(node.aqi)).length;
+  const totalSensorsCount = sortedStations.length + onlineNodeCount;
+  const communityLimitReached = communityReports.length >= 200;
   const hasWeatherReading = hasAirQualityReading(weather);
   const regionalMeanAqi = useMemo(() => {
     if (sortedStations.length === 0) return hasWeatherReading ? weather.aqi : null;
-    const nearby = sortedStations.slice(0, 5);
+    const nearby = hasKnownLocation ? sortedStations.slice(0, 5) : sortedStations;
     const sum = nearby.reduce((acc, cur) => acc + cur.aqi, 0);
     return Math.round(sum / nearby.length);
-  }, [sortedStations, weather.aqi, hasWeatherReading]);
+  }, [sortedStations, weather.aqi, hasWeatherReading, hasKnownLocation]);
 
   const windSpeedKmh = hasWeatherMetric(weather, 'windSpeed') ? Math.round(weather.windSpeed) : null;
   const windStatus =
@@ -299,8 +292,8 @@ export default function AirMap() {
     }
     toast.success(
       lang === 'vi'
-        ? `Đã thêm trạm "${station.name}" vào danh sách né tránh trong Lộ trình sạch.`
-        : `Added "${station.name}" to Smart Route avoidance.`
+        ? `Đã đánh dấu trạm "${station.name}" để xem trên Smart Route; chưa bảo đảm né được trạm này.`
+        : `Marked "${station.name}" for Smart Route review; avoidance is not guaranteed.`
     );
     navigate('/smart-route');
   };
@@ -316,43 +309,18 @@ export default function AirMap() {
 
         {/* Top Header & Navigation */}
         <div className="flex flex-wrap items-center justify-between gap-4 p-4 sm:p-5 rounded-3xl bg-[#0c1322]/90 backdrop-blur-xl border border-white/10 shadow-2xl">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate(-1)}
-                className="bg-white/[0.04] border-white/10 hover:bg-white/10 text-gray-200 rounded-xl h-9"
-              >
-                <ArrowLeft className="w-4 h-4 mr-1.5" />
-                {lang === 'vi' ? 'Quay lại' : 'Back'}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate('/')}
-                className="bg-white/[0.04] border-white/10 hover:bg-white/10 text-gray-200 rounded-xl h-9"
-              >
-                <Home className="w-4 h-4 mr-1.5" />
-                {lang === 'vi' ? 'Trang chủ' : 'Home'}
-              </Button>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-cyan-500 via-sky-600 to-blue-700 flex items-center justify-center shadow-lg shadow-cyan-500/30 ring-2 ring-cyan-400/30 shrink-0">
+              <Layers className="w-5 h-5 text-white" />
             </div>
-
-            <div className="h-6 w-px bg-white/10 hidden sm:block" />
-
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-cyan-500 via-sky-600 to-blue-700 flex items-center justify-center shadow-lg shadow-cyan-500/30 ring-2 ring-cyan-400/30 shrink-0">
-                <Layers className="w-5 h-5 text-white" />
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-[10px] font-heading font-bold uppercase tracking-wider text-cyan-300">
+                <Sparkles className="w-3 h-3 text-cyan-400" />
+                {lang === 'vi' ? 'BẢN ĐỒ KHÍ QUYỂN THỜI GIAN THỰC' : 'REAL-TIME ATMOSPHERIC MAP'}
               </div>
-              <div>
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-[10px] font-heading font-bold uppercase tracking-wider text-cyan-300">
-                  <Sparkles className="w-3 h-3 text-cyan-400" />
-                  {lang === 'vi' ? 'BẢN ĐỒ KHÍ QUYỂN THỜI GIAN THỰC' : 'REAL-TIME ATMOSPHERIC MAP'}
-                </div>
-                <h1 className="text-lg sm:text-xl font-heading font-black text-white tracking-tight leading-tight mt-0.5">
-                  {lang === 'vi' ? 'Bản Đồ AQI Vi Vùng' : 'Micro-Zone AQI Map'}
-                </h1>
-              </div>
+              <h1 className="text-lg sm:text-xl font-heading font-black text-white tracking-tight leading-tight mt-0.5">
+                {lang === 'vi' ? 'Bản Đồ AQI Vi Vùng' : 'Micro-Zone AQI Map'}
+              </h1>
             </div>
           </div>
 
@@ -362,13 +330,20 @@ export default function AirMap() {
               <span className="max-w-[200px] truncate">{userCoords.label}</span>
             </div>
             <DataStatusChip
-              status={demo ? 'demo' : hasWeatherReading || sortedStations.length ? 'live' : 'unavailable'}
+              status={demo ? hasWeatherReading || sortedStations.length > 0 ? 'demo' : 'unavailable' : sortedStations.length > 0 ? 'live' : hasWeatherReading ? (weather.source === 'open-meteo' ? 'estimated' : 'live') : 'unavailable'}
               lang={lang}
-              source={demo ? 'WAQI + IoT Nodes (Demo)' : 'WAQI Network + IoT'}
-              observedAt={weather.updatedAt || null}
+              source={demo ? (lang === 'vi' ? 'Dữ liệu mô phỏng' : 'Simulated data') : sortedStations.length > 0 ? 'WAQI' : hasWeatherReading ? weather.source : (lang === 'vi' ? 'Chưa có nguồn' : 'No source')}
+              observedAt={sortedStations.length > 0 ? sortedStations[0].time : weather.updatedAt || null}
             />
           </div>
         </div>
+
+        {(stationState === 'error' || iotState === 'error' || communityState === 'error') && <div role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-200">
+          {lang === 'vi' ? 'Một số lớp dữ liệu bản đồ không tải được; các số lượng liên quan đang để trống, không coi là 0.' : 'Some map layers could not be loaded; related counts are left blank rather than shown as zero.'}
+        </div>}
+        {communityLimitReached && <div role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-200">
+          {lang === 'vi' ? 'Danh sách báo cáo cộng đồng đã chạm giới hạn 200 mục; bản đồ và số điểm nóng có thể chưa đầy đủ.' : 'The community-report query reached its 200-item limit; the map and hotspot total may be incomplete.'}
+        </div>}
 
         {/* 4 Telemetry KPI Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
@@ -377,15 +352,17 @@ export default function AirMap() {
               <span>{lang === 'vi' ? 'CẢM BIẾN ONLINE' : 'ACTIVE SENSORS'}</span>
               <Radio className="w-4 h-4 text-cyan-400" />
             </div>
-            <p className="text-2xl font-heading font-bold text-white mt-2">{totalSensorsCount}</p>
+            <p className="text-2xl font-heading font-bold text-white mt-2">{stationState === 'ready' && iotState === 'ready' ? totalSensorsCount : '—'}</p>
             <p className="text-[11px] text-gray-400 mt-0.5">
-              {sortedStations.length} {lang === 'vi' ? 'trạm WAQI' : 'WAQI stations'} · {sortedIotNodes.length} {lang === 'vi' ? 'node IoT' : 'IoT nodes'}
+              {stationState === 'ready' ? sortedStations.length : '—'} {lang === 'vi' ? 'trạm WAQI có số đo' : 'WAQI stations with readings'} · {iotState === 'ready' ? onlineNodeCount : '—'} {lang === 'vi' ? 'node IoT online' : 'online IoT nodes'}
             </p>
           </div>
 
           <div className="rounded-2xl p-4 bg-gradient-to-br from-[#0B1528]/90 to-[#08101E]/95 border border-sky-500/20 shadow-xl backdrop-blur-xl">
             <div className="flex items-center justify-between text-gray-400 text-xs font-heading">
-              <span>{lang === 'vi' ? 'AQI TRUNG BÌNH VÙNG' : 'REGIONAL MEAN AQI'}</span>
+              <span>{sortedStations.length > 0
+                ? hasKnownLocation ? (lang === 'vi' ? 'AQI TB 5 TRẠM GẦN' : 'MEAN AQI OF NEAREST 5') : (lang === 'vi' ? 'AQI TB CÁC TRẠM' : 'MEAN STATION AQI')
+                : (lang === 'vi' ? 'AQI TẠI VỊ TRÍ' : 'AQI AT LOCATION')}</span>
               <Activity className="w-4 h-4 text-emerald-400" />
             </div>
             <div className="flex items-baseline gap-2 mt-2">
@@ -397,7 +374,7 @@ export default function AirMap() {
               )}
             </div>
             <p className="text-[11px] text-gray-400 mt-0.5">
-              {sortedStations.length ? (lang === 'vi' ? 'Tính từ các trạm quan trắc lân cận' : 'Calculated from nearby stations') : (lang === 'vi' ? 'Chỉ số tại vị trí hiện tại' : 'Current location reading')}
+              {sortedStations.length ? (lang === 'vi' ? 'Tính từ số đo trạm đang có' : 'Calculated from available station readings') : (lang === 'vi' ? 'Chỉ số tại vị trí hiện tại' : 'Current location reading')}
             </p>
           </div>
 
@@ -415,9 +392,9 @@ export default function AirMap() {
               <span>{lang === 'vi' ? 'ĐIỂM NÓNG Ô NHIỄM' : 'CIVIC HOTSPOTS'}</span>
               <Flame className="w-4 h-4 text-orange-400" />
             </div>
-            <p className="text-2xl font-heading font-bold text-orange-400 mt-2">{allHotspots.length}</p>
+            <p className="text-2xl font-heading font-bold text-orange-400 mt-2">{communityState === 'ready' && stationState === 'ready' && !communityLimitReached ? allHotspots.length : '—'}</p>
             <p className="text-[11px] text-gray-400 mt-0.5">
-              {highRiskHotspotsCount} {lang === 'vi' ? 'điểm mức độ cao' : 'high severity alerts'}
+              {communityState === 'ready' && stationState === 'ready' && !communityLimitReached ? highRiskHotspotsCount : '—'} {lang === 'vi' ? 'điểm mức độ cao' : 'high severity alerts'}
             </p>
           </div>
         </div>
@@ -454,17 +431,17 @@ export default function AirMap() {
                     <TabsTrigger value="waqi" className="gap-1 text-xs rounded-lg data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-300 font-semibold">
                       <Radio className="w-3.5 h-3.5" />
                       <span>{lang === 'vi' ? 'Trạm' : 'WAQI'}</span>
-                      <span className="text-[10px] opacity-70">({sortedStations.length})</span>
+                      <span className="text-[10px] opacity-70">({stationState === 'ready' ? sortedStations.length : '—'})</span>
                     </TabsTrigger>
                     <TabsTrigger value="iot" className="gap-1 text-xs rounded-lg data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-300 font-semibold">
                       <Cpu className="w-3.5 h-3.5" />
                       <span>IoT</span>
-                      <span className="text-[10px] opacity-70">({sortedIotNodes.length})</span>
+                      <span className="text-[10px] opacity-70">({iotState === 'ready' ? sortedIotNodes.length : '—'})</span>
                     </TabsTrigger>
                     <TabsTrigger value="community" className="gap-1 text-xs rounded-lg data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-300 font-semibold">
                       <Users className="w-3.5 h-3.5" />
                       <span>{lang === 'vi' ? 'Cộng đồng' : 'Crowd'}</span>
-                      <span className="text-[10px] opacity-70">({communityReports.length})</span>
+                      <span className="text-[10px] opacity-70">({communityState === 'ready' ? communityReports.length >= 200 ? '≥200' : communityReports.length : '—'})</span>
                     </TabsTrigger>
                   </TabsList>
 
@@ -472,7 +449,11 @@ export default function AirMap() {
                   <TabsContent value="waqi" className="space-y-2 mt-3 max-h-[360px] overflow-y-auto pr-1">
                     {sortedStations.length === 0 ? (
                       <p className="text-xs text-gray-400 text-center py-6">
-                        {lang === 'vi' ? 'Đang tải danh sách trạm quan trắc...' : 'Loading monitoring stations...'}
+                        {stationState === 'loading'
+                          ? (lang === 'vi' ? 'Đang tải danh sách trạm quan trắc...' : 'Loading monitoring stations...')
+                          : stationState === 'error'
+                            ? (lang === 'vi' ? 'Không tải được trạm quan trắc.' : 'Could not load monitoring stations.')
+                            : (lang === 'vi' ? 'Không có trạm có số đo trong khu vực bản đồ.' : 'No station with a reading in this map area.')}
                       </p>
                     ) : (
                       sortedStations.map((s) => {
@@ -527,7 +508,11 @@ export default function AirMap() {
                   <TabsContent value="iot" className="space-y-2 mt-3 max-h-[360px] overflow-y-auto pr-1">
                     {sortedIotNodes.length === 0 ? (
                       <p className="text-xs text-gray-400 text-center py-6">
-                        {lang === 'vi' ? 'Không có cảm biến IoT nào đang kết nối tại khu vực.' : 'No active IoT nodes connected nearby.'}
+                        {iotState === 'loading'
+                          ? (lang === 'vi' ? 'Đang tải danh sách node IoT...' : 'Loading IoT nodes...')
+                          : iotState === 'error'
+                            ? (lang === 'vi' ? 'Không tải được danh sách node IoT.' : 'Could not load IoT nodes.')
+                            : (lang === 'vi' ? 'Chưa có node IoT nào được đăng ký.' : 'No IoT nodes are registered.')}
                       </p>
                     ) : (
                       sortedIotNodes.map((n) => (
@@ -543,14 +528,14 @@ export default function AirMap() {
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex items-start gap-2.5 min-w-0 flex-1">
                               <div className="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex flex-col items-center justify-center font-heading font-black text-cyan-300 shrink-0 shadow-md">
-                                <span className="text-xs leading-none">{n.aqi}</span>
+                                <span className="text-xs leading-none">{n.status === 'online' && Number.isFinite(n.aqi) ? n.aqi : '—'}</span>
                                 <span className="text-[8px] opacity-80 uppercase leading-none mt-0.5">AQI</span>
                               </div>
                               <div className="min-w-0 flex-1">
                                 <h4 className="font-heading font-bold text-xs text-white leading-tight line-clamp-2" title={n.name}>
                                   {n.name}
                                 </h4>
-                                <p className="text-[11px] text-gray-400 truncate mt-0.5">🏢 {n.organization_name || 'Node IoT AirWeave'}</p>
+                                <p className="text-[11px] text-gray-400 truncate mt-0.5">🏢 {n.organization_name || (lang === 'vi' ? 'Chưa gán tổ chức' : 'No organization assigned')}</p>
                               </div>
                             </div>
                             <span className="text-[10px] font-heading font-bold text-cyan-300 shrink-0">
@@ -566,16 +551,20 @@ export default function AirMap() {
                   <TabsContent value="community" className="space-y-2 mt-3 max-h-[360px] overflow-y-auto pr-1">
                     {communityReports.length === 0 ? (
                       <p className="text-xs text-gray-400 text-center py-6">
-                        {lang === 'vi' ? 'Chưa có báo cáo điểm ô nhiễm cộng đồng.' : 'No community pollution reports.'}
+                        {communityState === 'loading'
+                          ? (lang === 'vi' ? 'Đang tải báo cáo cộng đồng...' : 'Loading community reports...')
+                          : communityState === 'error'
+                            ? (lang === 'vi' ? 'Không tải được báo cáo cộng đồng.' : 'Could not load community reports.')
+                            : (lang === 'vi' ? 'Chưa có báo cáo điểm ô nhiễm cộng đồng.' : 'No community pollution reports.')}
                       </p>
                     ) : (
                       communityReports.map((r) => (
                         <div key={r.id} className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 space-y-1">
                           <div className="flex items-center justify-between text-xs font-heading font-bold text-rose-400">
-                            <span>📢 {r.kind || 'Báo cáo'}</span>
-                            <span className="text-[10px] text-gray-500">{new Date(r.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</span>
+                            <span>📢 {r.kind || (lang === 'vi' ? 'Báo cáo' : 'Report')}</span>
+                            <span className="text-[10px] text-gray-500">{new Date(r.created_at).toLocaleTimeString(lang === 'vi' ? 'vi-VN' : 'en-US', { hour: '2-digit', minute: '2-digit' })}</span>
                           </div>
-                          <p className="text-xs text-gray-300">{r.text || 'Bụi công trình / Khói ô nhiễm'}</p>
+                          <p className="text-xs text-gray-300">{r.text || (lang === 'vi' ? '(không có ghi chú)' : '(no note)')}</p>
                         </div>
                       ))
                     )}
@@ -668,7 +657,7 @@ export default function AirMap() {
                       className="w-full h-10 text-xs font-heading font-semibold bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl shadow-md shadow-cyan-600/20 gap-2"
                     >
                       <RouteIcon className="w-4 h-4" />
-                      <span>{lang === 'vi' ? 'Né trạm này trong Lộ trình sạch' : 'Avoid in Smart Route'}</span>
+                      <span>{lang === 'vi' ? 'Đánh dấu trên Smart Route' : 'Show in Smart Route'}</span>
                     </Button>
                   </div>
                 </div>

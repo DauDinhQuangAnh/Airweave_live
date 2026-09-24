@@ -88,9 +88,6 @@ const Auth = () => {
   return (
     <div className="min-h-screen bg-background flex flex-col lg:flex-row overflow-y-auto relative">
       <div className="absolute top-3 left-3 z-30 flex gap-2">
-        <Button variant="outline" size="sm" onClick={() => navigate(-1)} className="h-9 gap-1.5 font-heading text-xs bg-background/80 backdrop-blur">
-          <ArrowLeft className="w-4 h-4" /> {lang === 'vi' ? 'Quay lại' : 'Back'}
-        </Button>
         <Button variant="outline" size="sm" onClick={() => navigate('/')} className="h-9 gap-1.5 font-heading text-xs bg-background/80 backdrop-blur">
           <Home className="w-4 h-4" /> {lang === 'vi' ? 'Trang chủ' : 'Home'}
         </Button>

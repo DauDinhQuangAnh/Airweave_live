@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { toast } from 'sonner';
 import {
   Siren,
   Heart,
@@ -30,11 +31,15 @@ import HospitalsMap from '@/components/sos/HospitalsMap';
 import { useNearbyHospitals } from '@/components/sos/use-nearby-hospitals';
 import { hasAirQualityReading } from '@/lib/air-quality';
 import { hasWeatherMetric } from '@/hooks/use-weather-data';
+import { sosApi } from '@/integrations/api';
+import { isDemoMode } from '@/lib/demo/demo-mode';
 
 export default function SOS() {
   const navigate = useNavigate();
   const lang = useAppLang();
   const [tab, setTab] = useState<'id' | 'hospitals' | 'info'>('id');
+  const [creatingDoctorQr, setCreatingDoctorQr] = useState(false);
+  const demo = isDemoMode();
 
   const { location, weather } = useLiveAirContext();
   const { profiles, conditions } = useMedicalProfiles();
@@ -55,6 +60,35 @@ export default function SOS() {
   const hasReading = hasAirQualityReading(weather);
   const aqi = hasReading ? weather.aqi : null;
   const pm25 = hasWeatherMetric(weather, 'pm25') ? weather.pm25 : null;
+
+  const openDoctorQr = async () => {
+    if (demo) {
+      window.open('/qr/demo', '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (!profiles.length) {
+      setTab('id');
+      toast.error(lang === 'vi' ? 'Hãy tạo Medical ID trước khi tạo QR.' : 'Create a Medical ID before generating a QR code.');
+      return;
+    }
+    setCreatingDoctorQr(true);
+    try {
+      const hasGps = ['active', 'manual'].includes(location.status) &&
+        Number.isFinite(location.lat) && Number.isFinite(location.lng);
+      const event = await sosApi.trigger({
+        profile_id: profiles[0].id,
+        lat: hasGps ? location.lat : undefined,
+        lng: hasGps ? location.lng : undefined,
+        aqi: aqi ?? undefined,
+        pm25: pm25 ?? undefined,
+      });
+      navigate(`/qr/${event.share_token}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : (lang === 'vi' ? 'Không tạo được QR y tế.' : 'Could not generate the medical QR code.'));
+    } finally {
+      setCreatingDoctorQr(false);
+    }
+  };
 
   const getAqiRiskLevel = (val: number) => {
     if (val <= 50) return { label: lang === 'vi' ? 'An toàn hô hấp' : 'Low Risk', color: 'text-emerald-400', bg: 'bg-emerald-500/15 border-emerald-500/30' };
@@ -88,43 +122,18 @@ export default function SOS() {
 
           {/* Top Navigation & Header */}
           <div className="flex flex-wrap items-center justify-between gap-4 p-5 sm:p-6 rounded-3xl bg-[#0c1322]/80 backdrop-blur-xl border border-white/10 shadow-2xl">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => navigate(-1)}
-                  className="bg-white/[0.03] border-white/10 hover:bg-white/10 text-gray-300 rounded-xl"
-                >
-                  <ArrowLeft className="w-4 h-4 mr-1.5" />
-                  {lang === 'vi' ? 'Quay lại' : 'Back'}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => navigate('/')}
-                  className="bg-white/[0.03] border-white/10 hover:bg-white/10 text-gray-300 rounded-xl"
-                >
-                  <Home className="w-4 h-4 mr-1.5" />
-                  {lang === 'vi' ? 'Trang chủ' : 'Home'}
-                </Button>
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-red-600 via-red-700 to-rose-900 flex items-center justify-center shadow-lg shadow-red-600/40 ring-2 ring-red-500/30 shrink-0">
+                <Siren className="w-6 h-6 text-white animate-pulse" strokeWidth={2.5} />
               </div>
-
-              <div className="h-6 w-px bg-white/10 hidden sm:block"></div>
-
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-red-600 via-red-700 to-rose-900 flex items-center justify-center shadow-lg shadow-red-600/40 ring-2 ring-red-500/30 shrink-0">
-                  <Siren className="w-6 h-6 text-white animate-pulse" strokeWidth={2.5} />
+              <div>
+                <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-[10px] font-heading font-bold uppercase tracking-wider text-red-300">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-ping"></span>
+                  {lang === 'vi' ? 'EMERGENCY · HỖ TRỢ KHẨN CẤP' : 'EMERGENCY · RESPIRATORY SOS'}
                 </div>
-                <div>
-                  <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-[10px] font-heading font-bold uppercase tracking-wider text-red-300">
-                    <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-ping"></span>
-                    {lang === 'vi' ? 'EMERGENCY · HỖ TRỢ KHẨN CẤP' : 'EMERGENCY · RESPIRATORY SOS'}
-                  </div>
-                  <h1 className="text-xl sm:text-2xl lg:text-3xl font-heading font-black text-white tracking-tight leading-tight mt-0.5">
-                    AirWeave <span className="text-red-500">SOS</span>
-                  </h1>
-                </div>
+                <h1 className="text-xl sm:text-2xl lg:text-3xl font-heading font-black text-white tracking-tight leading-tight mt-0.5">
+                  AirWeave <span className="text-red-500">SOS</span>
+                </h1>
               </div>
             </div>
 
@@ -141,11 +150,12 @@ export default function SOS() {
 
               <Button
                 size="sm"
-                onClick={() => window.open('/qr/demo', '_blank')}
+                onClick={openDoctorQr}
+                disabled={creatingDoctorQr}
                 className="bg-white/[0.04] hover:bg-white/[0.08] text-gray-200 border border-white/15 rounded-2xl font-heading text-xs"
               >
                 <Eye className="w-3.5 h-3.5 mr-1.5 text-red-400" />
-                {lang === 'vi' ? 'Demo QR Bác Sĩ' : 'Doctor QR'}
+                {demo ? (lang === 'vi' ? 'Xem QR demo' : 'View demo QR') : (lang === 'vi' ? 'Tạo QR bác sĩ' : 'Generate doctor QR')}
               </Button>
 
               <a
@@ -447,10 +457,11 @@ export default function SOS() {
                     </p>
                     <Button
                       size="sm"
-                      onClick={() => window.open('/qr/demo', '_blank')}
+                      onClick={openDoctorQr}
+                      disabled={creatingDoctorQr}
                       className="w-full h-8 text-xs font-heading bg-red-600/20 hover:bg-red-600/30 text-red-200 border border-red-500/40 rounded-xl mt-1"
                     >
-                      {lang === 'vi' ? 'Xem Thử Phiếu Bác Sĩ' : 'Preview Doctor Card'}
+                      {demo ? (lang === 'vi' ? 'Xem phiếu demo' : 'Preview demo card') : (lang === 'vi' ? 'Tạo phiếu bác sĩ' : 'Generate doctor card')}
                     </Button>
                   </div>
 
